@@ -33,3 +33,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .idea/
+
+# local dumps and generated credentials (keep these outside the repository)
+backups/
+.secrets/
+*.dump
+
