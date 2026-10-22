@@ -6,7 +6,7 @@ import { AlertTriangle, Check, Database, LoaderCircle, Save, Settings2 } from "l
 
 export function GlobalSettings({ initial, demo }: { initial: any; demo: boolean }) {
   const router = useRouter();
-  const [form, setForm] = useState({ applicationName: "MerQato Command Center", coBrand: "Palawan Collective", brandMark: "MQ", logoUrl: "", faviconUrl: "", locale: "en-PH", timezone: "Asia/Manila", currency: "PHP", dateFormat: "medium", weekStartsOn: 1, allowUserThemes: true, allowUserLayouts: true, auditRetentionDays: 365, sessionHours: 12, healthCheckSeconds: 60, syncIntervalMinutes: 30, maintenanceMode: false, navigation: [], allowedOutboundHosts: [], backupSchedule: "0 2 * * *", ...initial });
+  const [form, setForm] = useState({ applicationName: "Palawan Collective", coBrand: "Command Center", brandMark: "PC", logoUrl: "", faviconUrl: "", locale: "en-PH", timezone: "Asia/Manila", currency: "PHP", dateFormat: "medium", weekStartsOn: 1, allowUserThemes: true, allowUserLayouts: true, auditRetentionDays: 365, sessionHours: 12, healthCheckSeconds: 60, syncIntervalMinutes: 30, maintenanceMode: false, navigation: [], allowedOutboundHosts: [], backupSchedule: "0 2 * * *", ...initial });
   const [navigation, setNavigation] = useState<string>((initial.navigation || ["Overview", "Clients", "Projects", "Websites", "Services & pricing", "Finance", "Operations"]).join("\n"));
   const [hosts, setHosts] = useState<string>((initial.allowedOutboundHosts || []).join("\n"));
   const [busy, setBusy] = useState(false);

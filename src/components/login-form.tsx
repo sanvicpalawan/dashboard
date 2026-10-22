@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, LoaderCircle, ShieldCheck } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 
 export function LoginForm({ demo }: { demo: boolean }) {
   const router = useRouter();
@@ -25,7 +26,7 @@ export function LoginForm({ demo }: { demo: boolean }) {
   }
 
   return <div className="login-form">
-    <div className="brand"><div className="brand-mark">MQ</div><div className="brand-copy"><div className="brand-name">MerQato Command Center</div><div className="brand-sub">PALAWAN COLLECTIVE</div></div></div>
+    <div className="brand"><BrandLogo size={36} /><div className="brand-copy"><div className="brand-name">Palawan Collective</div><div className="brand-sub">COMMAND CENTER</div></div></div>
     <h2>Enter the workspace.</h2>
     <p>Email authentication is temporarily removed while we build.</p>
     <div className="notice" style={{ marginBottom: 20 }}><ShieldCheck size={17} /><div><strong>Local development access</strong><br />Continue with the demo administrator account. A normal database-backed session is still created, so layouts, roles and permissions continue to work.</div></div>

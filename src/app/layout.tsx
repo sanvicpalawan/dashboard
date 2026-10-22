@@ -3,9 +3,10 @@ import "./globals.css";
 import "./responsive.css";
 
 export const metadata: Metadata = {
-  title: { default: "MerQato Command Center", template: "%s · MerQato" },
-  description: "The self-hosted agency operating system for Palawan Collective + MerQato.digital.",
-  applicationName: "MerQato Command Center",
+  title: { default: "Palawan Collective Command Center", template: "%s · Palawan Collective" },
+  description: "Self-hosted agency operating system for Palawan Collective and merQato.digital: clients, projects, websites, finance, automation and dashboards.",
+  applicationName: "Palawan Collective Command Center",
+  authors: [{ name: "Palawan Collective", url: "https://merqato.digital" }],
   robots: { index: false, follow: false },
 };
 

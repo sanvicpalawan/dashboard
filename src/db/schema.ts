@@ -22,7 +22,7 @@ export const workspaces = pgTable("workspaces", {
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   legalName: text("legal_name"),
-  brandMark: text("brand_mark").notNull().default("MQ"),
+  brandMark: text("brand_mark").notNull().default("PC"),
   demoMode: boolean("demo_mode").notNull().default(false),
   settings: jsonb("settings").notNull().default({}),
   ...timestamps,

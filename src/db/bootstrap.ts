@@ -70,7 +70,7 @@ async function bootstrap() {
     name: "Palawan Collective + MerQato.digital",
     slug: "palawan-merqato",
     legalName: "Palawan Collective / MerQato.digital",
-    brandMark: "MQ",
+    brandMark: "PC",
     demoMode: demo,
     settings: { positioning: "Local businesses. Distinct digital worlds.", location: "Palawan, Philippines" },
   }).onConflictDoNothing().returning();
@@ -94,8 +94,8 @@ async function bootstrap() {
   await db.insert(appSettings).values({
     key: `workspace:${workspaceRecord.id}`,
     value: {
-      applicationName: "MerQato Command Center",
-      coBrand: "Palawan Collective",
+      applicationName: "Palawan Collective",
+      coBrand: "Command Center",
       locale: "en-PH",
       timezone: "Asia/Manila",
       currency: "PHP",

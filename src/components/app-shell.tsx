@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { SessionUser } from "@/lib/permissions";
 import { hasPermission } from "@/lib/permissions";
+import { BRAND_CO_BRAND, BRAND_NAME, BrandLogo } from "@/components/brand-logo";
 import { themeVariables, type ThemePreset } from "@/lib/themes";
 import { cn, relativeTime } from "@/lib/utils";
 
@@ -112,7 +113,7 @@ export function AppShell({ children, user, notifications, theme, accent, density
     <div className={cn("shell", collapsed && "shell-collapsed", mobileOpen && "shell-mobile-open")} data-sidebar={theme.sidebarStyle}>
       {mobileOpen && <button aria-label="Close navigation" onClick={() => setMobileOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 35, background: "#0008", border: 0 }} />}
       <aside className="sidebar" aria-label="Main navigation">
-        <div className="brand"><div className="brand-mark">{branding.logoUrl ? <img src={branding.logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit" }} /> : branding.brandMark || "MQ"}</div><div className="brand-copy"><div className="brand-name">{branding.applicationName || "MerQato"}</div><div className="brand-sub">{(branding.coBrand || "COMMAND CENTER").toUpperCase()}</div></div><button className="icon-button mobile-close" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={17} /></button><button className="collapse-button" onClick={toggleSidebar} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>{collapsed ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}</button></div>
+        <div className="brand"><BrandLogo src={branding.logoUrl} label={branding.brandMark || "Palawan Collective"} /><div className="brand-copy"><div className="brand-name">{branding.applicationName || BRAND_NAME}</div><div className="brand-sub">{(branding.coBrand || BRAND_CO_BRAND).toUpperCase()}</div></div><button className="icon-button mobile-close" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={17} /></button><button className="collapse-button" onClick={toggleSidebar} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>{collapsed ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}</button></div>
         <nav className="sidebar-nav">
           {nav.map((group) => {
             const visible = group.items.filter((item) => hasPermission(user, item.permission)).sort((a, b) => { const ai = navigation.indexOf(a.label); const bi = navigation.indexOf(b.label); return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi); });

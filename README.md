@@ -1,98 +1,132 @@
-# MerQato Command Center
+# Palawan Collective Command Center
 
 **Local businesses. Distinct digital worlds.**
 
-A self-hosted agency operating system for **Palawan Collective + MerQato.digital**: clients, projects, websites, service pricing, finance, operations, configurable dashboards, themes, users, RBAC, audit events, and verified API integrations.
+A self-hosted agency operating system for **Palawan Collective** and **merQato.digital** — clients,
+projects, websites, service pricing, finance, operations, configurable dashboards, themes, users,
+RBAC, audit events and verified API integrations.
 
-## Tech stack
+Built in Palawan, deployed on Neon Postgres. No third-party dashboard or low-code runtime is
+required to run it.
+
+---
+
+## Stack
 
 | Layer | Technology |
-| --- | --- |
+|---|---|
 | Framework | Next.js 16 (App Router, route handlers, `instrumentation.ts`) |
-| UI | React 19, TypeScript 5.9, Tailwind CSS 4 (PostCSS), Lucide icons, `motion` |
-| Dashboard grid | Dnd Kit (`@dnd-kit/core`, `sortable`, `utilities`) with persisted shared layouts and per-user overrides |
-| Database | PostgreSQL via Drizzle ORM 0.45 + drizzle-kit migrations (checked-in SQL, 3 migrations) |
+| UI | React 19, TypeScript 5.9, Tailwind CSS 4 (PostCSS), Lucide icons, motion (Framer) |
+| Dashboard grid | `@dnd-kit` (core / sortable / utilities) with persisted shared layouts + per-user overrides |
+| Database | **Neon Postgres 18** — pooled `-pooler` endpoint for traffic, direct endpoint for migrations — via Drizzle ORM 0.45 + drizzle-kit (3 checked-in SQL migrations) |
 | Validation | Zod 4 |
-| Auth and security | Database-backed revocable HTTP-only cookie sessions, scrypt passwords, SHA-256 session tokens, AES-GCM encrypted secrets, server-enforced RBAC and workspace scoping |
-| Infra | Standalone Docker image (non-root, port 3000), Docker Compose, Coolify/UpCloud deployment, `/api/health`, optional `AUTO_MIGRATE` startup migrations |
-| Ops tooling | `scripts/backup.sh`, `restore.sh`, `verify-backup.sh` (pg_dump custom format + SHA-256), ESLint 9 |
+| Auth / security | DB-backed revocable HTTP-only cookie sessions, scrypt passwords, SHA-256 session tokens, AES-GCM encrypted secrets, RBAC with server-enforced workspace scoping |
+| Infra | Docker (standalone image, non-root, port 3000), docker-compose (app + local `merqato_postgres` volume for offline work), Coolify/UpCloud deploy docs, `/api/health`, optional `AUTO_MIGRATE` |
+| Ops tooling | `scripts/backup.sh` / `restore.sh` / `verify-backup.sh` (pg_dump custom format + SHA-256), ESLint 9 |
 | Integrations | Native `fetch` provider adapters: GitHub, Vercel, Coolify, Cloudflare, InvoiceShelf, OpenCode, OpenRouter, Ollama, UpCloud |
+
+---
+
+## Getting started
+
+### 1. Neon database
+
+The project is linked to the Neon project named `dashboard`
+(`org-rough-haze-98678005` / `icy-thunder-63019822`, branch `production`, region
+`aws-ap-southeast-1`).
+
+```sh
+npm i -g neon@latest                 # or prefix every command with npx neon@latest
+neon init -y --org-id org-rough-haze-98678005 \
+  --project-id icy-thunder-63019822 \
+  --branch production --services postgres
+neon deploy                          # provisions neon.ts services, pulls env vars
+```
+
+`neon deploy` writes `.env.local` with:
+
+| Variable | Use |
+|---|---|
+| `DATABASE_URL` | pooled (`-pooler`) endpoint — application traffic |
+| `DATABASE_URL_UNPOOLED` | direct endpoint — migrations, dumps, anything holding session state |
+| `NEON_BRANCH` | branch name this checkout is linked to |
+
+The Neon agent skills used during setup are vendored in `.agents/skills/` (`neon`,
+`neon-postgres`). Key rule taken from them: **the application uses the pooled URL, migrations use
+the direct URL.** Running Drizzle Kit against the pooler produces misleading errors such as
+`prepared statement "s0" already exists`.
+
+### 2. Environment
+
+```sh
+cp .env.example .env.local      # then fill the remaining secrets
+openssl rand -base64 48         # CREDENTIAL_ENCRYPTION_KEY / AUTH_SECRET
+```
+
+Required: `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `BOOTSTRAP_ADMIN_EMAIL`, a strong
+`BOOTSTRAP_ADMIN_PASSWORD`, `CREDENTIAL_ENCRYPTION_KEY`, `AUTH_SECRET`.
+
+### 3. Install, migrate, run
+
+```sh
+npm ci
+npm run db:migrate              # Drizzle Kit over DATABASE_URL_UNPOOLED
+npm run dev                     # http://localhost:3000
+# or
+npm run build && npm start
+```
+
+`AUTO_MIGRATE=true` also applies the checked-in migrations at server start (via
+`src/instrumentation.ts`, using the direct URL). Keep it enabled for the first single-replica
+deploy, then disable it once migrations are part of your release step.
+
+### 4. First login
+
+Open `/login`. The administrator record is created only when the user table is empty. In
+demo/development mode **Continue as administrator** opens a normal database-backed session without
+an email flow. Set `DEMO_MODE=false` before production bootstrap; the passwordless flow must not be
+exposed publicly.
+
+---
 
 ## Code tree
 
-```text
-merqato-agency-operating-system/
-├── README.md · docs/integrations.md
-├── package.json · tsconfig.json · next.config.ts · eslint.config.mjs · postcss.config.mjs
-├── Dockerfile · docker-compose.yml · .dockerignore · .env.example · drizzle.config.ts
-├── drizzle/
-│   ├── 0000_groovy_jetstream.sql · 0001_keen_slapstick.sql · 0002_sturdy_stick.sql
-│   └── meta/                       # migration snapshots + journal
-├── scripts/                        # backup.sh · restore.sh · verify-backup.sh
-├── public/brand.svg
-└── src/
-    ├── instrumentation.ts          # optional startup migrations
-    ├── app/
-    │   ├── layout.tsx · globals.css · responsive.css
-    │   ├── login/page.tsx
-    │   ├── (workspace)/            # main app shell
-    │   │   ├── page.tsx            # dashboards + persistent visual grid editor
-    │   │   ├── layout.tsx · loading.tsx · error.tsx
-    │   │   ├── clients/ · projects/[id]/ · websites/ · leads/
-    │   │   ├── services/ · finance/ · operations/
-    │   │   ├── tools/[id]/ · appearance/
-    │   │   └── admin/              # overview · dashboards · widgets · users ·
-    │   │                           # integrations · settings · appearance · audit
-    │   └── api/
-    │       ├── auth/login · auth/logout · health · search · directory · notifications
-    │       ├── dashboards/         # CRUD · layout · widgets · assignments · actions · import
-    │       ├── admin/              # users · roles/[id] · sessions/[id] · settings ·
-    │       │                       # appearance · widgets/[key]
-    │       ├── integrations/[key] · widgets/data · widget-instances/[id]
-    │       ├── records/[resource] · projects/[id] · leads(+export) · operations
-    │       ├── tools/[id](/files/[fileId]) · uploads/[id] · websites/check
-    │       └── themes · preferences · webhooks/github
-    ├── components/                 # app-shell · dashboard-grid · dashboard-manager ·
-    │                               # widget-view/-types/-manager · integration-manager ·
-    │                               # user-manager · theme-gallery · lead-generation ·
-    │                               # operations-module · resource-module · project-detail ·
-    │                               # tools-catalog · tool-detail · login-form · module-tabs ·
-    │                               # admin-nav · global-settings
-    ├── db/                         # schema.ts · index.ts · bootstrap.ts (admin/demo seed)
-    └── lib/                        # auth · permissions · security · audit · dashboards ·
-                                    # integrations + integration-service · leads · themes ·
-                                    # widget-registry · widget-data · module-config ·
-                                    # tool-schema · utils
+```
+dashboard/
+├── src/
+│   ├── app/
+│   │   ├── layout.tsx                 # root metadata, icons, theme color
+│   │   ├── globals.css                # design tokens, shell, components
+│   │   ├── responsive.css             # breakpoint overrides
+│   │   ├── icon.png, apple-icon.png   # Palawan Collective favicons
+│   │   ├── login/page.tsx             # brand panel + workspace entry
+│   │   ├── (workspace)/               # authenticated app shell + pages
+│   │   │   ├── layout.tsx             # loads theme, branding, notifications
+│   │   │   ├── page.tsx               # overview dashboards
+│   │   │   ├── clients|projects|websites|services|finance|
+│   │   │   │   operations|leads|appearance|tools/…  # module pages
+│   │   │   └── admin/                 # dashboards, widgets, users, integrations,
+│   │   │                              # settings, appearance, audit
+│   │   └── api/                       # route handlers (auth, records, dashboards,
+│   │                                  # integrations, tools, uploads, webhooks, health)
+│   ├── components/                    # app shell, dashboard grid, module UIs,
+│   │                                  # brand-logo.tsx (Palawan Collective mark)
+│   ├── db/
+│   │   ├── index.ts                   # Neon-aware pg pool + Drizzle client
+│   │   ├── schema.ts                  # 42 tables, relations, constraints
+│   │   └── bootstrap.ts               # idempotent seed: roles, themes, widgets, demo data
+│   ├── lib/                           # auth, permissions, security, integrations,
+│   │                                  # widget registry/data, themes, module config
+│   └── instrumentation.ts             # startup migrations over the direct URL
+├── drizzle/                           # generated SQL migrations + snapshots
+├── docs/integrations.md               # provider scopes, endpoints, charges
+├── public/brand/                      # Palawan Collective mark, lockup, icons
+├── scripts/                           # backup, restore, verify-backup
+├── neon.ts                            # Neon service/branch policy
+└── .agents/skills/                    # neon + neon-postgres agent skills
 ```
 
-## Stack and environment capabilities
-
-- Next.js 16 App Router, React 19, TypeScript and Tailwind CSS 4.
-- PostgreSQL with Drizzle ORM, foreign keys, unique constraints, indexes and checked-in SQL migrations.
-- Database-backed, revocable HTTP-only cookie sessions. Passwords use scrypt; session tokens are SHA-256 hashed.
-- Server-enforced workspace scoping and role permissions. Financial, integration, credential and deployment permissions are separate.
-- Dnd Kit grid editing with persisted shared layouts and per-user overrides.
-- Native `fetch` provider adapters; no mandatory proprietary runtime or paid dashboard dependency.
-- Standalone Docker image, Compose configuration, `/api/health`, optional startup migrations and Coolify deployment support.
-
-The supplied environment supports Next.js, local PostgreSQL, server route handlers, TypeScript and production builds. It does not provide an external identity provider, email transport, persistent background worker, production VPS, DNS account, or preconfigured third-party credentials. Those capabilities are not claimed.
-
-## First run
-
-Requirements: Node.js 22+, PostgreSQL 16+ and npm.
-
-1. Copy `.env.example` to `.env` and replace every placeholder.
-2. Set `DATABASE_URL`, `BOOTSTRAP_ADMIN_EMAIL`, a strong `BOOTSTRAP_ADMIN_PASSWORD`, and `CREDENTIAL_ENCRYPTION_KEY` (`openssl rand -base64 48`).
-3. Install with `npm ci`.
-4. Apply migrations with `npx drizzle-kit migrate` (or `npx drizzle-kit push` during local schema development).
-5. Start with `npm run dev`, or build and start with `npm run build && npm run start`.
-6. Open `/login`. The administrator record is created only when the user table is empty. In demo/development mode, use **Continue as administrator**. Email authentication and a production identity flow are intentionally deferred; do not expose the passwordless demo flow publicly.
-
-### Demo mode
-
-`DEMO_MODE=true` seeds a **clearly labeled fictional Palawan agency workspace**. During the current build phase, email/password authentication is intentionally removed. Demo mode opens `/` directly with the demo administrator context, including when a browser has no usable session cookie. **Continue as administrator** remains available after sign-out and creates a normal database-backed session. This development access is disabled when `DEMO_MODE=false` and must not be exposed publicly. Integration providers still start disconnected and never return fabricated provider data.
-
-Use `DEMO_MODE=false` before production bootstrap. To remove an existing demo workspace, restore an empty database or deliberately delete the demo records; changing the flag does not silently delete business data.
+---
 
 ## Application map
 
@@ -108,6 +142,14 @@ Use `DEMO_MODE=false` before production bootstrap. To remove an existing demo wo
 - `/admin/settings` — branding, navigation, policy, locale, schedules, maintenance and outbound allowlist.
 - `/admin/audit` — append-only activity, security checks and rotation/backup guidance.
 
+## Branding
+
+Brand assets live in `public/brand/` (white turtle mark and lockup, designed for the `#0b0c10`
+surface) and `src/app/icon.png` / `src/app/apple-icon.png` for favicons. Application name, co-brand,
+brand mark and optional logo/favicon URLs are editable at **Admin → Settings → Branding**; the
+bundled Palawan Collective assets are the fallback when no logo URL is set. Theme colors are
+editable at **Admin → Appearance**.
+
 ## Docker and Coolify on UpCloud
 
 ### Docker Compose
@@ -116,16 +158,18 @@ Use `DEMO_MODE=false` before production bootstrap. To remove an existing demo wo
 2. On the UpCloud VPS, install Docker and Coolify using their official documentation. Restrict Coolify and SSH with firewall rules.
 3. Copy `.env.example` into Coolify's environment configuration (never into the image) and set strong secrets.
 4. For a Compose deployment, use `docker-compose.yml`. PostgreSQL data is stored in `merqato_postgres`; only the app publishes a port.
-5. For a single Coolify application plus a managed Coolify PostgreSQL database, use the `Dockerfile` and set `DATABASE_URL` to that private database service.
+5. For a single Coolify application plus managed Postgres, use the `Dockerfile` and set `DATABASE_URL` / `DATABASE_URL_UNPOOLED` to the managed database.
 6. Keep `AUTO_MIGRATE=true` for the initial single-replica deployment. Checked-in migrations run through `instrumentation.ts`. Run only one replica during migration; disable the flag afterward if you prefer an explicit migration step.
 7. Set the Coolify health check to `GET /api/health`. Put Cloudflare in front of the Coolify public hostname and keep `COOKIE_SECURE=true`.
 8. Verify first login, create a non-super test account, and review **Admin → Audit** before connecting production providers.
 
-The app listens on port 3000 as a non-root user. The image contains no `.env` file. Basic functionality requires only the app and PostgreSQL; Vercel, OpenRouter, UpCloud, Cloudflare paid features and other providers are optional and may incur usage charges.
+The app listens on port 3000 as a non-root user. The image contains no `.env` file. Basic
+functionality requires only the app and Postgres; Vercel, OpenRouter, UpCloud, Cloudflare paid
+features and other providers are optional and may incur usage charges.
 
 ### Update
 
-1. Back up PostgreSQL and record the current Git commit/image.
+1. Back up Postgres and record the current Git commit/image.
 2. Review changes and migration compatibility in GitHub.
 3. Deploy the reviewed commit through Coolify with one application replica.
 4. Wait for migrations and `/api/health`, then verify login, dashboard layout and critical writes.
@@ -134,6 +178,8 @@ The app listens on port 3000 as a non-root user. The image contains no `.env` fi
 ### Rollback
 
 Roll back the Coolify deployment to the previous known-good image. If a destructive migration was applied, restore the matching pre-update backup into a separate database, verify it, then switch `DATABASE_URL`. Never assume an old application image is compatible with a newer schema.
+
+On Neon, the cheaper and faster path is **instant restore** or a branch: `neon branches create --name rollback-<date> --parent <history-timestamp>`, verify on the branch, then repoint the connection strings.
 
 ## Backup and restore
 
@@ -148,7 +194,11 @@ export BACKUP_FILE='./backups/merqato-TIMESTAMP.dump'
 sh ./scripts/verify-backup.sh
 ```
 
-Store dumps encrypted off-VPS. Schedule the backup script with a Coolify scheduled task, not the web request process. A backup is only considered verified after the separate restore test passes. The interface reports recorded backup jobs; it does not claim a backup succeeded without that record. These scripts are supplied for the target PostgreSQL environment; no off-site production backup has been performed by this source build.
+Dumps against Neon must use the **direct** (`DATABASE_URL_UNPOOLED`) host, not the `-pooler` one.
+Store dumps encrypted off-VPS. Schedule the backup script with a Coolify scheduled task or a Neon
+workflow, not the web request process. A backup is only considered verified after the separate
+restore test passes. The interface reports recorded backup jobs; it does not claim a backup
+succeeded without that record.
 
 ## Security model
 
@@ -187,8 +237,11 @@ Run these against a non-production workspace and record actual results:
 
 ```sh
 npm run typecheck
-npx next typegen
+npm run lint
 npm run build
-npx drizzle-kit generate
-npx drizzle-kit migrate
+npm run db:generate      # new migration from src/db/schema.ts
+npm run db:migrate       # apply migrations (direct Neon URL)
+npm run db:studio        # inspect data
+neon branches list
+neon connection-string --branch production
 ```

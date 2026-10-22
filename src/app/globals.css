@@ -50,6 +50,11 @@ button { color: inherit; }
 .brand { display: flex; align-items: center; gap: 11px; min-height: 38px; padding: 0 8px; }
 .brand-mark { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 9px; background: var(--accent); color: var(--accent-text); font-size: 11px; font-weight: 800; letter-spacing: -.04em; }
 .brand-copy { min-width: 0; }
+.brand-mark-logo { padding: 4px; background: #0b0c10; border: 1px solid color-mix(in srgb, var(--border) 90%, transparent); }
+.brand-mark-logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.login-brand { display: flex; flex-direction: column; gap: 14px; }
+.login-brand img { width: clamp(170px, 20vw, 220px); height: auto; display: block; }
+.login-brand-line { color: #717788; font-size: 10px; text-transform: uppercase; letter-spacing: .18em; }
 .brand-name { font-size: 13px; line-height: 1.2; font-weight: 680; letter-spacing: -.01em; white-space: nowrap; }
 .brand-sub { margin-top: 3px; color: var(--muted); font-size: 10px; letter-spacing: .04em; white-space: nowrap; }
 .collapse-button { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; margin-left: auto; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
