@@ -73,10 +73,10 @@ export function safeExternalUrl(value: string) {
   const url = new URL(value);
   if (!['https:', 'http:'].includes(url.protocol)) throw new Error("Only HTTP(S) destinations are supported.");
   const hostname = url.hostname.toLowerCase();
-  if (hostname === "localhost" || hostname === "0.0.0.0" || hostname === "::1" || hostname.endsWith(".local")) {
+  if (hostname === "localhost" || hostname === "0.0.0.0" || hostname === "::1" || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname === "metadata") {
     throw new Error("This destination is not publicly routable. Add an explicit private-endpoint allowlist in workspace settings.");
   }
-  if (/^(127\.|10\.|169\.254\.|192\.168\.)/.test(hostname) || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) {
+  if (/^(127\.|10\.|169\.254\.|192\.168\.|100\.100\.100\.200$)/.test(hostname) || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) {
     throw new Error("Private network destinations require an explicit allowlist entry.");
   }
   return url;

@@ -51,6 +51,9 @@ async function request(url: URL, headers: Record<string, string>) {
   }
   const length = Number(response.headers.get("content-length") || 0);
   if (length > 10_000_000) throw new Error("Provider response exceeds the 10 MB synchronization limit.");
+  const contentType = response.headers.get("content-type") || "";
+  // A 200 that is HTML means the SPA or a login page answered: the credential never reached the API.
+  if (contentType && !contentType.toLowerCase().includes("json")) throw new Error(`Provider returned ${contentType.split(";")[0]} instead of JSON. The credential was not accepted by the API; verify the base URL and the supported token type.`);
   return response.json() as Promise<unknown>;
 }
 

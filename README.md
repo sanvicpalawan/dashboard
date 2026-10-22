@@ -215,7 +215,9 @@ succeeded without that record.
 
 See **[docs/integrations.md](docs/integrations.md)** for exact scopes, endpoints, charges and troubleshooting.
 
-Implemented read/test/sync adapters: GitHub, Vercel, Coolify, Cloudflare, version-probed InvoiceShelf, OpenCode server health/session status, OpenRouter account data, Ollama model inventory and UpCloud server inventory. All failures are visible and cached data is marked stale. InvoiceShelf mappings must be verified against the installed version. OpenCode has no assumed universal remote-control API and no execution action is enabled. Hermes is neither included nor required.
+Implemented read/test/sync adapters: GitHub (multiple independent accounts), Vercel, Coolify, Cloudflare, InvoiceShelf, OpenCode server health/session status, OpenRouter account data, Ollama model inventory and UpCloud server inventory. All failures are visible and cached data is marked stale. Coolify is read-only by design: no deploy, restart or terminal action is exposed. InvoiceShelf requires a bearer token minted from its mobile login endpoint (see `docs/integrations.md`); its web UI has no token screen. OpenCode has no assumed universal remote-control API and no execution action is enabled. Hermes is neither included nor required.
+
+The **Websites** module shows a live column matched by repository URL and domain against synchronized GitHub, Coolify and Vercel data, and names each source as `verified`, `not connected`, `not synchronized` or `error` instead of implying availability. Vercel and Cloudflare tokens must be created once in their dashboards before those sources can report anything.
 
 Not currently claimed: arbitrary integrations without development, automatic email invitations, arbitrary custom-code widgets, universal deployment/DNS writes, guest VPS CPU/RAM metrics without a monitoring source, automatic off-site backups, or a persistent scheduled-sync worker inside the web process. Manual sync and registered integration-job retry are implemented; scheduled jobs need an external worker.
 
@@ -238,6 +240,7 @@ Run these against a non-production workspace and record actual results:
 ```sh
 npm run typecheck
 npm run lint
+npm run test             # crypto/redaction unit tests + live API checks when the server runs
 npm run build
 npm run db:generate      # new migration from src/db/schema.ts
 npm run db:migrate       # apply migrations (direct Neon URL)
