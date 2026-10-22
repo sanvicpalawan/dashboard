@@ -42,7 +42,9 @@ async function request(url: URL, headers: Record<string, string>) {
     let detail = "";
     try {
       const body = obj(await response.json());
-      detail = str(body.message || body.error || obj(body.error).message).slice(0, 300);
+      const text = [body.message, body.error, obj(body.error).message, body.error_description].find((value) => typeof value === "string" && value.trim().length > 0);
+      // Provider error payloads vary: some return nested objects, so fall back to compact JSON.
+      detail = (typeof text === "string" ? text : Object.keys(body).length ? JSON.stringify(body) : "").slice(0, 300);
     } catch { /* Provider status is sufficient and avoids reflecting sensitive bodies. */ }
     const guidance = response.status === 401 ? " Credentials were rejected; rotate or reconnect the token." : response.status === 403 ? " The credential is valid but lacks a required scope or the resource is forbidden." : response.status === 404 ? " The endpoint was not found; verify the installed version and base URL." : "";
     throw new ProviderHttpError(`Provider returned HTTP ${response.status}.${guidance}${detail ? ` ${detail}` : ""}`, response.status);
@@ -247,7 +249,18 @@ async function vercel(record: IntegrationRecord, mode: "test" | "sync") {
   const headers = { Authorization: `Bearer ${credential(record)}` };
   const teamId = str(record.config.teamId);
   const team = teamId ? `${teamId.startsWith("team_") ? "teamId" : "slug"}=${encodeURIComponent(teamId)}&` : "";
-  if (mode === "test") { const payload = obj(await request(endpoint("https://api.vercel.com/", "v2/user"), headers)); return { count: 1, detail: `Authenticated Vercel user ${str(obj(payload.user).username, "verified")}.` }; }
+  if (mode === "test") {
+    try {
+      const payload = obj(await request(endpoint("https://api.vercel.com/", "v2/user"), headers));
+      return { count: 1, detail: `Authenticated Vercel user ${str(obj(payload.user).username, "verified")}.` };
+    } catch (error) {
+      // Team-scoped tokens cannot read the personal user endpoint; verify against team projects instead.
+      if (!(error instanceof ProviderHttpError) || (error.status !== 403 && error.status !== 404)) throw error;
+      const payload = obj(await request(endpoint("https://api.vercel.com/", `v9/projects?${team}limit=1`), headers));
+      const visible = arr(payload.projects).length;
+      return { count: visible, detail: `Verified Vercel token against the ${teamId ? `team "${teamId}"` : "account"} projects endpoint (${visible} project(s) visible in this scope).` };
+    }
+  }
   const [projectPayload, deploymentPayload] = await Promise.all([
     request(endpoint("https://api.vercel.com/", `v9/projects?${team}limit=50`), headers),
     request(endpoint("https://api.vercel.com/", `v6/deployments?${team}limit=20`), headers),
