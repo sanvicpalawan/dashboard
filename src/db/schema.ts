@@ -597,6 +597,49 @@ export const backgroundJobs = pgTable("background_jobs", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Agent execution queue.
+ *
+ * A job is a durable instruction for the local OpenCode worker. The worker claims
+ * one queued job at a time with FOR UPDATE SKIP LOCKED, runs `opencode run` in the
+ * job directory, and records progress in `output`/`result`/`error`.
+ *
+ * status: queued | awaiting_approval | running | succeeded | failed | cancelled
+ * approval: auto | required  (required jobs never start until approved)
+ */
+export const agentJobs = pgTable("agent_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdByName: text("created_by_name").notNull().default(""),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  instructions: text("instructions").notNull(),
+  directory: text("directory").notNull(),
+  agent: text("agent").notNull().default("build"),
+  model: text("model"),
+  status: text("status").notNull().default("queued"),
+  approval: text("approval").notNull().default("auto"),
+  approvalReason: text("approval_reason"),
+  priority: integer("priority").notNull().default(5),
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(2),
+  sessionId: text("session_id"),
+  result: text("result").notNull().default(""),
+  output: text("output").notNull().default(""),
+  error: text("error"),
+  exitCode: integer("exit_code"),
+  worker: text("worker"),
+  runAt: timestamp("run_at", { withTimezone: true }).notNull().defaultNow(),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  index("agent_jobs_queue_idx").on(table.status, table.priority, table.runAt),
+  index("agent_jobs_workspace_idx").on(table.workspaceId, table.createdAt),
+]);
+
 export const webhookEvents = pgTable("webhook_events", {
   id: uuid("id").primaryKey().defaultRandom(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
@@ -619,3 +662,4 @@ export type UserRecord = typeof users.$inferSelect;
 export type DashboardRecord = typeof dashboards.$inferSelect;
 export type WidgetInstanceRecord = typeof widgetInstances.$inferSelect;
 export type IntegrationRecord = typeof integrations.$inferSelect;
+export type AgentJobRecord = typeof agentJobs.$inferSelect;

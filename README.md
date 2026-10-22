@@ -272,3 +272,59 @@ npm run db:studio        # inspect data
 neon branches list
 neon connection-string --branch production
 ```
+
+---
+
+## Agent queue and worker
+
+The dashboard can hand work to OpenCode on this machine. A job is stored in Postgres, the local
+worker claims it, runs `opencode run` in the job's directory, and writes the log, the result and any
+blocker back to the job row.
+
+| Piece | Location |
+|---|---|
+| Queue UI | `/agent` (permissions `agent.view`, `agent.run`, `agent.manage`) |
+| Queue table | `agent_jobs` (migration `drizzle/0004_agent_jobs.sql`) |
+| Worker | `node scripts/agent-worker.mjs` |
+| Guard rules | `config/agent-policy.json` (allowlisted directories, approval triggers) |
+| Bridge to stored credentials | `node scripts/integration-request.mjs <provider> <path>` |
+
+### Running the worker
+
+```sh
+node scripts/agent-worker.mjs          # poll forever
+node scripts/agent-worker.mjs --once   # one job, then exit
+```
+
+On Windows the launcher `C:\dev\merqato\tools\start-agent-worker.cmd` is registered in the Startup
+folder as `PalawanAgentWorker.cmd`, so it starts at logon. Only one worker can run at a time; a second
+instance exits because it cannot take the pid lock.
+
+Environment knobs: `AGENT_POLL_SECONDS` (default 5), `AGENT_TIMEOUT_MINUTES` (default 45),
+`AGENT_STALE_MINUTES` (default 10), `AGENT_MODEL` (optional default model), `AGENT_ALLOWED_ROOTS`
+(extra allowlisted directories, `;` separated), `OPENCODE_BIN` (path to the OpenCode executable).
+
+### Behaviour worth knowing
+
+- One job at a time, claimed with `FOR UPDATE SKIP LOCKED`, so two workers can never run the same job.
+- A job left `running` by a dead worker is requeued after `AGENT_STALE_MINUTES`, up to `max_attempts`.
+- Instructions matching a rule in `config/agent-policy.json` (force push, drop database, delete a
+  repository, terraform destroy, upgrade a plan) are saved as `awaiting_approval` and never executed
+  until someone with `agent.manage` approves them.
+- A cancel is enforced by the worker: it notices within about five seconds and stops the process tree.
+- The worker needs the laptop to be on. The dashboard, the queue and the records stay available
+  without it because they live in Neon; only execution pauses.
+
+### Credential bridge
+
+The agent can call a provider through a credential the dashboard already stores, without the token
+ever appearing in a prompt or a log:
+
+```sh
+node scripts/integration-request.mjs coolify /applications
+node scripts/integration-request.mjs github /repos/sanvicpalawan/sanvicph --account digitalnativepalawan
+node scripts/integration-request.mjs cloudflare /zones
+```
+
+Supported: github, vercel, coolify, cloudflare, upcloud, invoiceshelf, openrouter, ollama, opencode.
+`/admin/integrations` shows, per provider, whether the agent can actually use it today.

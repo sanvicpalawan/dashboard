@@ -191,3 +191,74 @@ test("leads carry real prospects with no invented values", async (t) => {
     assert.equal(Array.isArray(prospect.pitchedServices) && prospect.pitchedServices.length, 0, "imported leads must not carry invented pitches");
   }
 });
+
+// ---------------------------------------------------------------------------
+// Agent queue
+// ---------------------------------------------------------------------------
+
+const AGENT_TEST_TITLES = ["Test: path outside allowlist", "Test: guarded instruction", "Test: queued then cancelled", "Test: unauthenticated access"];
+
+async function cleanupAgentTests() {
+  const connectionString = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
+  if (!connectionString) return;
+  const client = new pg.Client({ connectionString, ssl: { rejectUnauthorized: false } });
+  await client.connect();
+  try {
+    await client.query("delete from agent_jobs where title = any($1::text[])", [AGENT_TEST_TITLES]);
+  } finally {
+    await client.end();
+  }
+}
+
+test("agent queue rejects work outside the allowlist", async (t) => {
+  if (!reachable) return t.skip("dashboard is not running");
+  const response = await api("/api/agent/jobs", {
+    method: "POST",
+    body: JSON.stringify({ title: AGENT_TEST_TITLES[0], instructions: "This should never reach a shell.", directory: "C:\\Windows\\System32" }),
+  });
+  assert.equal(response.status, 400);
+  assert.match(String(response.body.error), /allowlist/i);
+});
+
+test("agent queue holds instructions that match a guard rule", async (t) => {
+  if (!reachable) return t.skip("dashboard is not running");
+  const response = await api("/api/agent/jobs", {
+    method: "POST",
+    body: JSON.stringify({ title: AGENT_TEST_TITLES[1], instructions: "Rewrite history and force push to main.", directory: "C:\\dev\\merqato" }),
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.body));
+  assert.equal(response.body.job.status, "awaiting_approval");
+  assert.equal(response.body.job.approval, "required");
+  assert.ok(String(response.body.job.approvalReason).length > 0);
+  t.after(cleanupAgentTests);
+});
+
+test("agent job can be queued and cancelled by an operator", async (t) => {
+  if (!reachable) return t.skip("dashboard is not running");
+  const created = await api("/api/agent/jobs", {
+    method: "POST",
+    body: JSON.stringify({ title: AGENT_TEST_TITLES[2], instructions: "Report the current git branch of this repository and stop.", directory: "C:\\dev\\merqato" }),
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.job.status, "queued");
+
+  const cancelled = await api(`/api/agent/jobs/${created.body.job.id}`, { method: "PATCH", body: JSON.stringify({ action: "cancel" }) });
+  assert.equal(cancelled.status, 200, JSON.stringify(cancelled.body));
+  assert.equal(cancelled.body.job.status, "cancelled");
+  t.after(cleanupAgentTests);
+});
+
+test("agent queue requires authentication", async () => {
+  if (!reachable) return;
+  const response = await fetch(`${BASE}/api/agent/jobs`);
+  assert.equal(response.status, 401);
+});
+
+test("agent status reports the worker honestly", async (t) => {
+  if (!reachable) return t.skip("dashboard is not running");
+  const response = await api("/api/agent/status");
+  assert.equal(response.status, 200);
+  assert.equal(typeof response.body.worker.online, "boolean");
+  if (!response.body.worker.online) assert.ok(response.body.worker.reason.length > 0, "an offline worker must explain why");
+  assert.ok(Array.isArray(response.body.allowedRoots) && response.body.allowedRoots.length > 0);
+});

@@ -29,6 +29,13 @@
       "when": 1792676177586,
       "tag": "0003_prospect_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792709834495,
+      "tag": "0004_agent_jobs",
+      "breakpoints": true
     }
   ]
 }

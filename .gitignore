@@ -1,4 +1,4 @@
-# dependencies
+﻿# dependencies
 node_modules/
 .pnp
 .pnp.*
@@ -39,3 +39,14 @@ backups/
 .secrets/
 *.dump
 
+
+# local dev server log
+.server.log
+.server.log.*
+
+
+
+# agent worker runtime files
+.agent-worker.log
+.agent-worker.log.1
+.agent-worker.pid

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
-  Activity, Bell, Blocks, BriefcaseBusiness, Building2, ChevronDown, ChevronRight, CircleDollarSign,
+  Activity, Bell, Blocks, Bot, BriefcaseBusiness, Building2, ChevronDown, ChevronRight, CircleDollarSign,
   ChevronsLeft, ChevronsRight, Command, ExternalLink, FileText, FolderKanban, Globe2, LayoutDashboard,
   LogOut, Menu, Palette, Search, Settings2, ShieldCheck, Sparkles, Target, Users, Wrench, X,
 } from "lucide-react";
@@ -35,7 +35,8 @@ const nav = [
     { href: "/admin", label: "Administration", icon: ShieldCheck, permission: "admin.access" },
     { href: "/admin/integrations", label: "Integrations", icon: Blocks, permission: "integrations.view" },
   ] },
-  { section: "Automation tools", items: [
+  { section: "Agent & tools", items: [
+    { href: "/agent", label: "Agent queue", icon: Bot, permission: "agent.view" },
     { href: "/tools", label: "Tool catalog", icon: Wrench, permission: "tools.view" },
   ] },
 ];
