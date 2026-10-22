@@ -40,13 +40,24 @@ async function request(url: URL, headers: Record<string, string>) {
   }
   if (!response.ok) {
     let detail = "";
+    let payload: Record<string, unknown> = {};
     try {
-      const body = obj(await response.json());
-      const text = [body.message, body.error, obj(body.error).message, body.error_description].find((value) => typeof value === "string" && value.trim().length > 0);
+      payload = obj(await response.json());
+      const text = [payload.message, payload.error, obj(payload.error).message, payload.error_description].find((value) => typeof value === "string" && value.trim().length > 0);
       // Provider error payloads vary: some return nested objects, so fall back to compact JSON.
-      detail = (typeof text === "string" ? text : Object.keys(body).length ? JSON.stringify(body) : "").slice(0, 300);
+      detail = (typeof text === "string" ? text : Object.keys(payload).length ? JSON.stringify(payload) : "").slice(0, 300);
     } catch { /* Provider status is sufficient and avoids reflecting sensitive bodies. */ }
-    const guidance = response.status === 401 ? " Credentials were rejected; rotate or reconnect the token." : response.status === 403 ? " The credential is valid but lacks a required scope or the resource is forbidden." : response.status === 404 ? " The endpoint was not found; verify the installed version and base URL." : "";
+    // Vercel marks a dead token explicitly; do not guess "missing scope" when the token is invalid.
+    const invalidToken = obj(payload.error).invalidToken === true || payload.invalidToken === true;
+    const guidance = response.status === 401
+      ? " Credentials were rejected; rotate or reconnect the token."
+      : response.status === 403
+        ? invalidToken
+          ? " The provider rejected the token itself (invalidToken), so it is expired, revoked or was copied incorrectly. Create a new token and save it here."
+          : " The token is accepted but lacks a required scope for this resource."
+        : response.status === 404
+          ? " The endpoint was not found; verify the installed version and base URL."
+          : "";
     throw new ProviderHttpError(`Provider returned HTTP ${response.status}.${guidance}${detail ? ` ${detail}` : ""}`, response.status);
   }
   const length = Number(response.headers.get("content-length") || 0);

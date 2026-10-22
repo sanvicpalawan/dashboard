@@ -52,7 +52,7 @@ export const AGENT_ACCESS: AgentAccess[] = [
     key: "vercel",
     access: "blocked",
     permissions: "None until a valid token is stored",
-    note: "The stored token returns HTTP 403 Not authorized, so no call succeeds. Create a team-scoped token at vercel.com/account/tokens and save it here.",
+    note: "Vercel answers invalidToken:true for the stored token, so it is expired, revoked or was copied incorrectly. Create a team-scoped token at vercel.com/account/tokens and save it here.",
     verified: "2026-10-23",
   },
   {
