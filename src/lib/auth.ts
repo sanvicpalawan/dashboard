@@ -4,6 +4,7 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { roles, sessions, users, workspaces } from "@/db/schema";
 import { hashToken } from "@/lib/security";
+import { demoModeEnabled } from "@/lib/demo";
 import { hasPermission, type SessionUser } from "@/lib/permissions";
 import { audit } from "@/lib/audit";
 
@@ -14,7 +15,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) {
-    if (process.env.DEMO_MODE === "false" || cookieStore.get(ACCESS_PAUSE_COOKIE)?.value === "1") return null;
+    if (!demoModeEnabled() || cookieStore.get(ACCESS_PAUSE_COOKIE)?.value === "1") return null;
     const [account] = await db.select({
       id: users.id, workspaceId: users.workspaceId, teamId: users.teamId, roleId: users.roleId,
       roleSlug: roles.slug, roleName: roles.name, name: users.name, email: users.email, title: users.title,
@@ -102,5 +103,5 @@ export async function setSessionCookie(token: string, expiresAt: Date) {
 export async function clearSessionCookie() {
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, "", { httpOnly: true, sameSite: "lax", path: "/", expires: new Date(0) });
-  if (process.env.DEMO_MODE !== "false") cookieStore.set(ACCESS_PAUSE_COOKIE, "1", { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 });
+  if (demoModeEnabled()) cookieStore.set(ACCESS_PAUSE_COOKIE, "1", { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 });
 }

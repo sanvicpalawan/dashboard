@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { ensureBootstrap } from "@/db/bootstrap";
 import { getCurrentUser } from "@/lib/auth";
+import { demoModeEnabled } from "@/lib/demo";
 import { LoginForm } from "@/components/login-form";
 import { BRAND_LINE, BRAND_LOCKUP_SRC } from "@/components/brand-logo";
 
@@ -10,7 +11,7 @@ export const metadata = { title: "Sign in" };
 export default async function LoginPage() {
   await ensureBootstrap();
   if (await getCurrentUser()) redirect("/");
-  const demo = process.env.DEMO_MODE !== "false";
+  const demo = demoModeEnabled();
   return <main className="login-page">
     <section className="login-brand-panel" aria-label="Palawan Collective brand">
       <div className="login-brand">

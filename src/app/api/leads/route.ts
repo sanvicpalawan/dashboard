@@ -5,11 +5,11 @@ import { prospectActivities, prospects, users } from "@/db/schema";
 import { apiUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 
-import { CHANNELS, OUTCOMES, STAGES } from "@/lib/leads";
+import { CHANNELS, OUTCOMES, STAGES, VERIFICATIONS } from "@/lib/leads";
 
 export const dynamic = "force-dynamic";
 const nullableDate = z.preprocess((value) => value === "" || value === undefined ? null : value, z.string().max(40).nullable().optional());
-const prospectSchema = z.object({ businessName: z.string().trim().min(2).max(160), contactName: z.string().max(160).default(""), email: z.string().max(200).default(""), phone: z.string().max(80).default(""), whatsapp: z.string().max(80).default(""), website: z.string().max(500).default(""), socialLinks: z.string().max(1000).default(""), industry: z.string().max(120).default(""), location: z.string().max(160).default(""), source: z.string().max(160).default(""), stage: z.enum(STAGES).default("new"), pitchedServices: z.array(z.string().max(120)).max(20).default([]), estimatedValueMinor: z.number().int().min(0).default(0), notes: z.string().max(10000).default(""), nextFollowUpAt: nullableDate, declinedReason: z.string().max(2000).default(""), ownerId: z.preprocess((value) => value === "" ? null : value, z.string().uuid().nullable().optional()) });
+const prospectSchema = z.object({ businessName: z.string().trim().min(2).max(160), contactName: z.string().max(160).default(""), email: z.string().max(200).default(""), phone: z.string().max(80).default(""), whatsapp: z.string().max(80).default(""), website: z.string().max(500).default(""), socialLinks: z.string().max(1000).default(""), industry: z.string().max(120).default(""), location: z.string().max(160).default(""), source: z.string().max(160).default(""), stage: z.enum(STAGES).default("new"), verification: z.enum(VERIFICATIONS).default("unverified"), pitchedServices: z.array(z.string().max(120)).max(20).default([]), estimatedValueMinor: z.number().int().min(0).default(0), notes: z.string().max(10000).default(""), nextFollowUpAt: nullableDate, declinedReason: z.string().max(2000).default(""), ownerId: z.preprocess((value) => value === "" ? null : value, z.string().uuid().nullable().optional()) });
 const activitySchema = z.object({ prospectId: z.string().uuid(), channel: z.enum(CHANNELS), type: z.enum(["outreach", "pitch", "response", "note"]).default("outreach"), pitched: z.array(z.string().max(120)).max(20).default([]), outcome: z.enum(OUTCOMES).default("pending"), response: z.string().max(5000).default(""), note: z.string().max(5000).default(""), occurredAt: z.string().max(40).optional() });
 
 export async function GET() {

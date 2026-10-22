@@ -27,7 +27,9 @@ export function hashToken(token: string) {
 }
 
 function encryptionKey() {
-  const source = process.env.CREDENTIAL_ENCRYPTION_KEY || process.env.AUTH_SECRET || (process.env.DEMO_MODE !== "false" ? "local-demo-only-not-for-production" : "");
+  // Mirrors demoModeEnabled() in @/lib/demo, kept dependency-free so maintenance scripts can import this module.
+  const demo = process.env.DEMO_MODE === "true";
+  const source = process.env.CREDENTIAL_ENCRYPTION_KEY || process.env.AUTH_SECRET || (demo ? "local-demo-only-not-for-production" : "");
   if (!source || source === "local-demo-only-not-for-production") {
     if (process.env.NODE_ENV === "production") throw new Error("CREDENTIAL_ENCRYPTION_KEY must be set before storing integration credentials. Demo fallback keys are never used in production.");
   }

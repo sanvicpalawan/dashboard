@@ -43,6 +43,7 @@ import { INTEGRATION_DEFINITIONS } from "@/lib/integrations";
 import { THEME_PRESETS } from "@/lib/themes";
 import { WIDGET_REGISTRY, widgetByKey } from "@/lib/widget-registry";
 import { hashPassword } from "@/lib/security";
+import { demoModeEnabled } from "@/lib/demo";
 
 const day = (offset: number) => {
   const value = new Date();
@@ -53,7 +54,7 @@ const day = (offset: number) => {
 let bootstrapPromise: Promise<void> | null = null;
 
 async function bootstrap() {
-  const demo = process.env.DEMO_MODE !== "false";
+  const demo = demoModeEnabled();
   await db.insert(roles).values(DEFAULT_ROLES.map((role) => ({ ...role, permissions: [...role.permissions] }))).onConflictDoNothing();
   // Additive permission sync: newly introduced module permissions are granted to system roles without removing administrator customizations.
   const existingRoles = await db.select().from(roles);
@@ -120,7 +121,9 @@ async function bootstrap() {
   const [userCount] = await db.select({ value: count() }).from(users);
   let admin = (await db.select().from(users).where(eq(users.email, "admin@merqato.local")).limit(1))[0];
   if (!admin && Number(userCount.value) === 0) {
-    const password = process.env.BOOTSTRAP_ADMIN_PASSWORD || (demo ? "merqato-demo" : "");
+    // A fixed default password is never used: the demo path signs in without one, and real use
+    // requires an explicit BOOTSTRAP_ADMIN_PASSWORD (or a rotated password via the admin script).
+    const password = process.env.BOOTSTRAP_ADMIN_PASSWORD || randomBytes(24).toString("base64url");
     if (!password) throw new Error("Set BOOTSTRAP_ADMIN_PASSWORD for the initial administrator.");
     [admin] = await db.insert(users).values({
       workspaceId: workspaceRecord.id,

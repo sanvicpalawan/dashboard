@@ -344,6 +344,8 @@ export const prospects = pgTable("prospects", {
   location: text("location").notNull().default(""),
   source: text("source").notNull().default(""),
   stage: text("stage").notNull().default("new"),
+  // How much of this record is confirmed: unverified (imported/assumed), partial, verified (checked against the business).
+  verification: text("verification").notNull().default("unverified"),
   pitchedServices: jsonb("pitched_services").$type<string[]>().notNull().default([]),
   estimatedValueMinor: integer("estimated_value_minor").notNull().default(0),
   notes: text("notes").notNull().default(""),

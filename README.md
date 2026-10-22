@@ -18,11 +18,11 @@ required to run it.
 | Framework | Next.js 16 (App Router, route handlers, `instrumentation.ts`) |
 | UI | React 19, TypeScript 5.9, Tailwind CSS 4 (PostCSS), Lucide icons, motion (Framer) |
 | Dashboard grid | `@dnd-kit` (core / sortable / utilities) with persisted shared layouts + per-user overrides |
-| Database | **Neon Postgres 18** — pooled `-pooler` endpoint for traffic, direct endpoint for migrations — via Drizzle ORM 0.45 + drizzle-kit (3 checked-in SQL migrations) |
+| Database | **Neon Postgres 18** — pooled `-pooler` endpoint for traffic, direct endpoint for migrations — via Drizzle ORM 0.45 + drizzle-kit (4 checked-in SQL migrations) |
 | Validation | Zod 4 |
 | Auth / security | DB-backed revocable HTTP-only cookie sessions, scrypt passwords, SHA-256 session tokens, AES-GCM encrypted secrets, RBAC with server-enforced workspace scoping |
 | Infra | Docker (standalone image, non-root, port 3000), docker-compose (app + local `merqato_postgres` volume for offline work), Coolify/UpCloud deploy docs, `/api/health`, optional `AUTO_MIGRATE` |
-| Ops tooling | `scripts/backup.sh` / `restore.sh` / `verify-backup.sh` (pg_dump custom format + SHA-256), ESLint 9 |
+| Ops tooling | `scripts/backup.sh` / `restore.sh` / `verify-backup.sh` (pg_dump custom format + SHA-256), `backup-json.mjs` (logical JSON dump + FK-safe restore), `set-admin-password.mjs`, `cleanup-demo-data.mjs`, `import-prospects.mjs`, ESLint 9 |
 | Integrations | Native `fetch` provider adapters: GitHub, Vercel, Coolify, Cloudflare, InvoiceShelf, OpenCode, OpenRouter, Ollama, UpCloud |
 
 ---
@@ -82,10 +82,34 @@ deploy, then disable it once migrations are part of your release step.
 
 ### 4. First login
 
-Open `/login`. The administrator record is created only when the user table is empty. In
-demo/development mode **Continue as administrator** opens a normal database-backed session without
-an email flow. Set `DEMO_MODE=false` before production bootstrap; the passwordless flow must not be
-exposed publicly.
+Sign-in is email + password against the `users` table (scrypt hashes, rate-limited, DB-backed
+sessions, audited). The administrator record is created only when the user table is empty and needs
+`BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD`; otherwise rotate an existing account with:
+
+```sh
+node scripts/set-admin-password.mjs --email admin@merqato.local --out C:\dev\merqato\.secrets\admin-initial-password.txt
+```
+
+The password is written to `--out` (must be outside the repo), never printed. Move it into a password
+manager and delete the file.
+
+`DEMO_MODE` is opt-in: only `DEMO_MODE=true` enables the passwordless "Continue as administrator"
+button and the fictional seed records. Unset, misspelled or `false` means real-use mode, and
+`/api/auth/login` refuses `{"access":"local-workspace"}` with 403.
+
+### 5. Data maintenance
+
+| Script | Purpose |
+|---|---|
+| `node scripts/backup-json.mjs <file.json>` | logical dump of every public table - write it outside the repo |
+| `node scripts/backup-json.mjs --restore <file.json> --force` | truncate and reload in foreign-key order; verify on a Neon branch, never on live data |
+| `node scripts/cleanup-demo-data.mjs [--apply]` | dry-run or delete only the rows created by the demo seed functions |
+| `node scripts/import-prospects.mjs --file <csv> [--apply]` | create-only lead import with dedupe, review flags and a JSON report |
+| `node scripts/set-admin-password.mjs --email <address> --out <file>` | rotate an account password |
+
+`npm test` runs the unit tests plus live API checks against `DASHBOARD_URL` (default
+`http://localhost:3100`). Set `DASHBOARD_ADMIN_EMAIL` / `DASHBOARD_ADMIN_PASSWORD` to exercise real
+password sign-in; otherwise the suite creates a short-lived session row directly.
 
 ---
 
