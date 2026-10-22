@@ -1,0 +1,94 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowLeft, ArrowUpRight, Film, ImagePlus, Link2, LoaderCircle, MessageSquare, Paperclip, Plus, Send, Trash2, X } from "lucide-react";
+import { cn, formatDate, formatMoney } from "@/lib/utils";
+
+type Detail = { project: any; links: any[]; media: any[]; comments: any[]; tasks: any[]; viewer: { id: string; canManage: boolean } };
+const stamp = (value: string) => new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }).format(new Date(value));
+const initials = (name: string) => name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+function videoEmbed(url: string) {
+  const yt = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]{6,})/);
+  if (yt) return { kind: "iframe", src: `https://www.youtube.com/embed/${yt[1]}` };
+  const vimeo = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+  if (vimeo) return { kind: "iframe", src: `https://player.vimeo.com/video/${vimeo[1]}` };
+  return { kind: "video", src: url };
+}
+
+export function ProjectDetail({ projectId }: { projectId: string }) {
+  const [data, setData] = useState<Detail | null>(null);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState("");
+  const [addLink, setAddLink] = useState(false);
+  const [addMedia, setAddMedia] = useState(false);
+  const [link, setLink] = useState({ label: "", url: "", linkKind: "other" });
+  const [media, setMedia] = useState({ type: "image", url: "", caption: "" });
+  const [comment, setComment] = useState("");
+  const [attachments, setAttachments] = useState<{ url: string; name: string }[]>([]);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const mediaFileRef = useRef<HTMLInputElement>(null);
+  const load = useCallback(async () => {
+    const response = await fetch(`/api/projects/${projectId}`); const body = await response.json();
+    if (!response.ok) { setError(body.error || "Project could not be loaded."); return; }
+    setData(body);
+  }, [projectId]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (message) { const timer = setTimeout(() => setMessage(""), 3500); return () => clearTimeout(timer); } }, [message]);
+  async function upload(file: File) {
+    const form = new FormData(); form.append("file", file);
+    const response = await fetch("/api/uploads", { method: "POST", body: form }); const body = await response.json();
+    if (!response.ok) throw new Error(body.error || "Upload failed.");
+    return body as { url: string; name: string };
+  }
+  async function post(payload: Record<string, unknown>, key: string) {
+    setBusy(key); setError("");
+    try { const response = await fetch(`/api/projects/${projectId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); const body = await response.json(); if (!response.ok) throw new Error(body.error || "Request failed."); await load(); return true; } catch (reason) { setError(reason instanceof Error ? reason.message : "Request failed."); return false; } finally { setBusy(""); }
+  }
+  async function remove(kind: string, itemId: string) {
+    if (!window.confirm(`Remove this ${kind}?`)) return;
+    const response = await fetch(`/api/projects/${projectId}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, itemId }) }); const body = await response.json();
+    if (!response.ok) setError(body.error); else { setMessage(`${kind[0].toUpperCase()}${kind.slice(1)} removed.`); load(); }
+  }
+  async function attachFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]; if (!file) return;
+    setBusy("attach"); setError("");
+    try { const uploaded = await upload(file); setAttachments((current) => [...current, uploaded]); } catch (reason) { setError(reason instanceof Error ? reason.message : "Upload failed."); } finally { setBusy(""); event.target.value = ""; }
+  }
+  async function uploadMedia(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]; if (!file) return;
+    setBusy("media-upload"); setError("");
+    try { const uploaded = await upload(file); if (await post({ kind: "media", type: "image", url: uploaded.url, caption: media.caption || uploaded.name }, "media")) { setMessage("Image uploaded to the gallery."); setAddMedia(false); setMedia({ type: "image", url: "", caption: "" }); } } catch (reason) { setError(reason instanceof Error ? reason.message : "Upload failed."); } finally { setBusy(""); event.target.value = ""; }
+  }
+  if (error && !data) return <div className="card empty-state" style={{ minHeight: 320 }}><strong>{error}</strong><Link className="button" href="/projects" style={{ marginTop: 14 }}><ArrowLeft size={14} />Back to projects</Link></div>;
+  if (!data) return <div className="card card-body"><div className="skeleton" style={{ height: 26, width: "40%" }} /><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div>;
+  const { project, viewer } = data;
+  const openTasks = data.tasks.filter((task) => task.status !== "done");
+  return <>
+    <div style={{ marginBottom: 14 }}><Link href="/projects" className="button button-sm button-ghost"><ArrowLeft size={13} />All projects</Link></div>
+    <div className="page-heading"><div className="page-heading-copy"><div className="eyebrow">{project.code} · {project.clientName || "Internal project"}</div><h1>{project.name}</h1><p className="page-description">{project.description || "No description recorded yet."}</p><div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}><span className={`badge badge-${project.status}`}>{project.status}</span><span className={`badge badge-${project.priority}`}>{project.priority} priority</span><span className="badge">Lead · {project.leadName || "Unassigned"}</span>{project.repositoryUrl && <a className="badge" href={project.repositoryUrl} target="_blank" rel="noreferrer">Repository <ArrowUpRight size={10} /></a>}</div></div><div className="heading-actions">{viewer.canManage && <Link className="button" href={`/projects?selected=${project.id}`}>Edit record</Link>}</div></div>
+    {message && <div className="form-success" style={{ marginBottom: 14 }}>{message}</div>}{error && <div className="form-error" style={{ marginBottom: 14 }}>{error}</div>}
+    <div className="stats-grid"><div className="card stat-card"><div className="label">Progress</div><div className="value">{project.progress}%</div><div className="progress-track" style={{ width: "100%", marginTop: 10 }}><span style={{ width: `${project.progress}%` }} /></div></div><div className="card stat-card"><div className="label">Timeline</div><div className="value" style={{ fontSize: 16 }}>{formatDate(project.startDate)} → {formatDate(project.dueDate)}</div><div className="detail">{project.dueDate ? `${Math.ceil((new Date(project.dueDate).getTime() - Date.now()) / 86400000)} days remaining` : "No due date"}</div></div><div className="card stat-card"><div className="label">Budget</div><div className="value">{project.budgetMinor ? formatMoney(project.budgetMinor, project.currency, true) : "—"}</div><div className="detail">{project.currency}</div></div><div className="card stat-card"><div className="label">Open tasks</div><div className="value">{openTasks.length}</div><div className="detail">{data.tasks.length} total · {data.comments.length} comments</div></div></div>
+    <div className="project-layout">
+      <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
+        <section className="card"><div className="card-header"><Link2 size={15} /><h2>Links</h2><span className="badge">{data.links.length}</span>{viewer.canManage && <div className="actions"><button className="button button-sm" onClick={() => setAddLink(!addLink)}><Plus size={12} />Add URL</button></div>}</div>
+          {addLink && <div className="card-body" style={{ borderBottom: "1px solid var(--border)" }}><div className="form-grid"><div className="field"><label>Label</label><input value={link.label} onChange={(e) => setLink({ ...link, label: e.target.value })} placeholder="Staging site" /></div><div className="field"><label>Type</label><select value={link.linkKind} onChange={(e) => setLink({ ...link, linkKind: e.target.value })}>{["production", "preview", "repository", "design", "document", "other"].map((item) => <option key={item}>{item}</option>)}</select></div><div className="field field-full"><label>URL</label><input type="url" value={link.url} onChange={(e) => setLink({ ...link, url: e.target.value })} placeholder="https://" /></div></div><button className="button button-primary" style={{ marginTop: 12 }} disabled={busy === "link" || !link.label || !link.url} onClick={async () => { if (await post({ kind: "link", ...link }, "link")) { setLink({ label: "", url: "", linkKind: "other" }); setAddLink(false); setMessage("Link added."); } }}>{busy === "link" ? <LoaderCircle size={13} className="animate-spin" /> : <Plus size={13} />}Save link</button></div>}
+          <div className="card-body" style={{ paddingTop: 10 }}>{data.links.length ? <div className="link-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>{data.links.map((item) => <div className="link-tile" key={item.id} style={{ padding: 11 }}><a href={item.url} target="_blank" rel="noreferrer" style={{ minWidth: 0, flex: 1 }}><span style={{ display: "block", color: "var(--text)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span><span style={{ display: "block", fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.kind} · {item.url.replace(/^https?:\/\//, "")}</span></a>{viewer.canManage && <button className="icon-button" style={{ width: 24, height: 24 }} onClick={() => remove("link", item.id)}><Trash2 size={11} /></button>}</div>)}</div> : <p className="page-description">No links yet.</p>}</div></section>
+        <section className="card"><div className="card-header"><Film size={15} /><h2>Images & videos</h2><span className="badge">{data.media.length}</span>{viewer.canManage && <div className="actions"><button className="button button-sm" onClick={() => setAddMedia(!addMedia)}><ImagePlus size={12} />Add media</button></div>}</div>
+          {addMedia && <div className="card-body" style={{ borderBottom: "1px solid var(--border)" }}><div className="form-grid"><div className="field"><label>Type</label><select value={media.type} onChange={(e) => setMedia({ ...media, type: e.target.value })}><option value="image">Image (URL or upload)</option><option value="video">Video (YouTube, Vimeo or MP4 URL)</option></select></div><div className="field"><label>Caption</label><input value={media.caption} onChange={(e) => setMedia({ ...media, caption: e.target.value })} /></div><div className="field field-full"><label>{media.type === "video" ? "Video URL" : "Image URL (optional if uploading)"}</label><input type="url" value={media.url} onChange={(e) => setMedia({ ...media, url: e.target.value })} placeholder="https://" /></div></div><div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}><button className="button button-primary" disabled={busy === "media" || !media.url} onClick={async () => { if (await post({ kind: "media", ...media }, "media")) { setMedia({ type: "image", url: "", caption: "" }); setAddMedia(false); setMessage("Media added."); } }}>{busy === "media" ? <LoaderCircle size={13} className="animate-spin" /> : <Plus size={13} />}Save from URL</button>{media.type === "image" && <><input ref={mediaFileRef} type="file" accept="image/*" hidden onChange={uploadMedia} /><button className="button" disabled={busy === "media-upload"} onClick={() => mediaFileRef.current?.click()}>{busy === "media-upload" ? <LoaderCircle size={13} className="animate-spin" /> : <ImagePlus size={13} />}Upload image (max 3 MB)</button></>}</div></div>}
+          <div className="card-body" style={{ paddingTop: 10 }}>{data.media.length ? <div className="media-grid">{data.media.map((item) => { const embed = item.type === "video" ? videoEmbed(item.url) : null; return <figure className="media-tile" key={item.id}>{item.type === "image" ? <button onClick={() => setLightbox(item.url)} style={{ padding: 0, border: 0, background: "none", cursor: "zoom-in", width: "100%" }}><img src={item.url} alt={item.caption || "Project image"} /></button> : embed?.kind === "iframe" ? <iframe src={embed.src} title={item.caption || "Project video"} allow="accelerometer; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="no-referrer" /> : <video src={embed?.src} controls preload="metadata" />}<figcaption><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.caption || (item.type === "video" ? "Video" : "Image")}</span><small>{item.author || "Team"} · {stamp(item.createdAt)}</small></span>{viewer.canManage && <button className="icon-button" style={{ width: 24, height: 24 }} onClick={() => remove("media", item.id)}><Trash2 size={11} /></button>}</figcaption></figure>; })}</div> : <p className="page-description">No images or videos yet.</p>}</div></section>
+        <section className="card"><div className="card-header"><MessageSquare size={15} /><h2>Team comments</h2><span className="badge">{data.comments.length}</span></div>
+          <div className="card-body" style={{ display: "grid", gap: 14 }}>{data.comments.length ? data.comments.map((item) => <article className="comment" key={item.id}><span className="avatar" style={{ flex: "0 0 auto" }}>{initials(item.author)}</span><div style={{ minWidth: 0, flex: 1 }}><div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}><strong style={{ fontSize: 12 }}>{item.author}</strong>{item.authorTitle && <span style={{ color: "var(--muted)", fontSize: 10 }}>{item.authorTitle}</span>}<time style={{ color: "var(--muted)", fontSize: 10, marginLeft: "auto" }} dateTime={item.createdAt}>{stamp(item.createdAt)}</time>{(viewer.canManage || item.authorId === viewer.id) && <button className="icon-button" style={{ width: 22, height: 22 }} onClick={() => remove("comment", item.id)} aria-label="Delete comment"><Trash2 size={11} /></button>}</div><p style={{ margin: "6px 0 0", fontSize: 12, lineHeight: 1.65, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.body}</p>{item.attachments?.length > 0 && <div className="comment-attachments">{item.attachments.map((file: any, index: number) => <button key={index} onClick={() => setLightbox(file.url)} style={{ padding: 0, border: 0, background: "none", cursor: "zoom-in" }}><img src={file.url} alt={file.name} /></button>)}</div>}</div></article>) : <p className="page-description">No comments yet. Start the conversation below.</p>}
+            <div className="comment-composer"><textarea className="input" rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write an update, decision or question for the team…" />{attachments.length > 0 && <div className="comment-attachments">{attachments.map((file, index) => <span key={index} style={{ position: "relative" }}><img src={file.url} alt={file.name} /><button className="icon-button" style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, background: "var(--elevated)" }} onClick={() => setAttachments((current) => current.filter((_, i) => i !== index))} aria-label="Remove attachment"><X size={10} /></button></span>)}</div>}<div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><input ref={fileRef} type="file" accept="image/*" hidden onChange={attachFile} /><button className="button button-sm" disabled={busy === "attach"} onClick={() => fileRef.current?.click()}>{busy === "attach" ? <LoaderCircle size={12} className="animate-spin" /> : <Paperclip size={12} />}Attach image</button><span style={{ color: "var(--muted)", fontSize: 9 }}>Posted with your name, date and time (Asia/Manila).</span><button className="button button-primary button-sm" style={{ marginLeft: "auto" }} disabled={busy === "comment" || !comment.trim()} onClick={async () => { if (await post({ kind: "comment", body: comment, attachments }, "comment")) { setComment(""); setAttachments([]); } }}>{busy === "comment" ? <LoaderCircle size={12} className="animate-spin" /> : <Send size={12} />}Post comment</button></div></div></div></section>
+      </div>
+      <aside style={{ display: "grid", gap: 16, alignContent: "start", minWidth: 0 }}>
+        <section className="card"><div className="card-header"><h2>Deliverables</h2></div><div className="card-body widget-list" style={{ paddingTop: 6 }}>{project.deliverables?.length ? project.deliverables.map((item: string, index: number) => <div className="widget-item" key={index}><span className="widget-item-title" style={{ whiteSpace: "normal" }}>{item}</span></div>) : <p className="page-description">No deliverables listed.</p>}</div></section>
+        <section className="card"><div className="card-header"><h2>Tasks</h2><span className="badge">{openTasks.length} open</span></div><div className="card-body widget-list" style={{ paddingTop: 6 }}>{data.tasks.length ? data.tasks.map((task) => <div className="widget-item" key={task.id}><div className="widget-item-main"><span className="widget-item-title" style={{ whiteSpace: "normal", textDecoration: task.status === "done" ? "line-through" : undefined }}>{task.title}</span><span className="widget-item-sub">{task.assignee || "Unassigned"} · {task.dueDate ? formatDate(task.dueDate) : "No date"}</span></div><span className={cn("badge", `badge-${task.status}`)}>{task.status.replaceAll("_", " ")}</span></div>) : <p className="page-description">No tasks yet.</p>}</div></section>
+        <section className="card"><div className="card-header"><h2>Record</h2></div><div className="card-body" style={{ fontSize: 11, color: "var(--muted)", display: "grid", gap: 8 }}><div>Client<br /><strong style={{ color: "var(--text)" }}>{project.clientName || "Internal"}</strong></div><div>Delivery lead<br /><strong style={{ color: "var(--text)" }}>{project.leadName || "Unassigned"}</strong></div><div>Created<br /><strong style={{ color: "var(--text)" }}>{stamp(project.createdAt)}</strong></div><div>Last updated<br /><strong style={{ color: "var(--text)" }}>{stamp(project.updatedAt)}</strong></div></div></section>
+      </aside>
+    </div>
+    {lightbox && <div className="modal-backdrop" style={{ placeItems: "center" }} onMouseDown={() => setLightbox(null)}><img src={lightbox} alt="Preview" style={{ maxWidth: "min(1200px,95vw)", maxHeight: "90vh", borderRadius: 10 }} /></div>}
+  </>;
+}

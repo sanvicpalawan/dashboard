@@ -1,0 +1,3 @@
+export default function Loading() {
+  return <div><div className="page-heading"><div style={{ width: "50%" }}><div className="skeleton" style={{ width: 120 }} /><div className="skeleton" style={{ height: 28, width: "70%" }} /><div className="skeleton" /></div></div><div className="stats-grid">{Array.from({ length: 4 }, (_, index) => <div className="card stat-card" key={index}><div className="skeleton" /><div className="skeleton" style={{ height: 24 }} /></div>)}</div><div className="card card-body"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div></div>;
+}
