@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * Palawan Collective agent worker.
  *
@@ -114,11 +114,28 @@ const OPENCODE_BIN = resolveOpencode();
 // Database
 // ---------------------------------------------------------------------------
 
-const client = new pg.Client({
+const clientConfig = {
   connectionString: DATABASE_URL,
   ssl: DATABASE_URL.includes("neon.tech") || /sslmode=require/.test(DATABASE_URL) ? { rejectUnauthorized: false } : undefined,
   application_name: "palawan-agent-worker",
-});
+};
+
+/** Neon can be asleep or the network can be down at logon. Retry instead of dying silently. */
+let client = new pg.Client(clientConfig);
+
+async function connectWithRetry(attempts = 12, delayMs = 10_000) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await client.connect();
+      return;
+    } catch (error) {
+      log(`database connect failed (${attempt}/${attempts}): ${error.message}`);
+      if (attempt === attempts) throw error;
+      client = new pg.Client(clientConfig);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
 
 const log = (...args) => console.log(new Date().toISOString(), ...args);
 
@@ -404,7 +421,7 @@ function acquireLock() {
 
 async function main() {
   acquireLock();
-  await client.connect();
+  await connectWithRetry();
   STARTED_AT = new Date().toISOString();
   OPENCODE_VERSION = await readOpencodeVersion();
   log(`worker ${WORKER_NAME} online. OpenCode ${OPENCODE_VERSION || "unknown"}, poll ${POLL_MS / 1000}s, timeout ${TIMEOUT_MS / 60000}m`);
