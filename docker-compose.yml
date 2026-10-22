@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-merqato}
+      POSTGRES_USER: ${POSTGRES_USER:-merqato}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong PostgreSQL password}
+    volumes:
+      - merqato_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-merqato} -d ${POSTGRES_DB:-merqato}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [merqato]
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-merqato}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-merqato}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:?Set the initial administrator email}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?Set a strong initial administrator password}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?Set a long random encryption key}
+      DEMO_MODE: "false"
+      AUTO_MIGRATE: "true"
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    networks: [merqato]
+
+volumes:
+  merqato_postgres:
+networks:
+  merqato:
+    driver: bridge
