@@ -28,6 +28,9 @@ export function hashToken(token: string) {
 
 function encryptionKey() {
   const source = process.env.CREDENTIAL_ENCRYPTION_KEY || process.env.AUTH_SECRET || (process.env.DEMO_MODE !== "false" ? "local-demo-only-not-for-production" : "");
+  if (!source || source === "local-demo-only-not-for-production") {
+    if (process.env.NODE_ENV === "production") throw new Error("CREDENTIAL_ENCRYPTION_KEY must be set before storing integration credentials. Demo fallback keys are never used in production.");
+  }
   if (!source) throw new Error("CREDENTIAL_ENCRYPTION_KEY is required before storing integration credentials.");
   return createHash("sha256").update(source).digest();
 }

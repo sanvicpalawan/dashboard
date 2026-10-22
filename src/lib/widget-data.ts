@@ -19,7 +19,8 @@ import {
   websites,
 } from "@/db/schema";
 import type { SessionUser } from "@/lib/permissions";
-import { decryptSecret, safeExternalUrl } from "@/lib/security";
+import { safeExternalUrl } from "@/lib/security";
+import { accountCredentials } from "@/lib/integration-service";
 import { formatDate, formatMoney, relativeTime } from "@/lib/utils";
 import type { WidgetData, WidgetItem } from "@/components/widget-types";
 
@@ -85,7 +86,7 @@ async function approvedRemote(user: SessionUser, settings: Settings) {
   const cacheKey = `${user.workspaceId}:${url.toString()}`;
   const cached = remoteMemoryCache.get(cacheKey);
   if (cached && Date.now() - cached.at < 120_000) return cached.payload;
-  const headers: Record<string, string> = { Accept: "application/json, application/rss+xml, application/xml, text/xml", "User-Agent": "MerQato-Command-Center/1.0" };
+  const headers: Record<string, string> = { Accept: "application/json, application/rss+xml, application/xml, text/xml", "User-Agent": "Palawan-Collective-Command-Center/1.0" };
   const credentialIntegration = text(settings.credentialIntegration);
   if (credentialIntegration) {
     const [integration] = await db.select().from(integrations).where(and(eq(integrations.workspaceId, user.workspaceId), eq(integrations.key, credentialIntegration))).limit(1);
@@ -93,7 +94,7 @@ async function approvedRemote(user: SessionUser, settings: Settings) {
     const providerHosts: Record<string, string> = { github: "api.github.com", vercel: "api.vercel.com", cloudflare: "api.cloudflare.com", openrouter: "openrouter.ai", upcloud: "api.upcloud.com" };
     const expectedHost = integration.baseUrl ? new URL(integration.baseUrl).hostname : providerHosts[integration.key];
     if (!expectedHost || url.hostname !== expectedHost) throw new Error("Credential references can only be sent to the integration's own configured hostname.");
-    headers.Authorization = `Bearer ${decryptSecret(integration.credentialEncrypted)}`;
+    headers.Authorization = `Bearer ${accountCredentials(integration)[0]?.token ?? ""}`;
   }
   const response = await fetch(url, { headers, signal: AbortSignal.timeout(8000), redirect: "error", cache: "no-store" });
   if (!response.ok) throw new Error(`Remote endpoint returned HTTP ${response.status}.`);

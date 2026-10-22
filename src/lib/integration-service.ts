@@ -13,13 +13,27 @@ const num = (value: unknown) => typeof value === "number" ? value : Number(value
 function endpoint(base: string, path: string) {
   const url = new URL(path.replace(/^\//, ""), base.endsWith("/") ? base : `${base}/`);
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Integration URL must be HTTP(S) and cannot contain credentials.");
+  // Private self-hosted services (Coolify, Ollama, OpenCode) are legitimate targets, but cloud
+  // instance metadata endpoints never are.
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "metadata.google.internal" || host === "metadata" || host.startsWith("169.254.") || host === "fd00:ec2::254" || host === "100.100.100.200") {
+    throw new Error("Link-local and cloud metadata addresses cannot be used as integration endpoints.");
+  }
   return url;
+}
+
+class ProviderHttpError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
 }
 
 async function request(url: URL, headers: Record<string, string>) {
   let response: Response;
   try {
-    response = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "MerQato-Command-Center/1.0", ...headers }, signal: AbortSignal.timeout(15_000), cache: "no-store", redirect: "error" });
+    response = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "Palawan-Collective-Command-Center/1.0", ...headers }, signal: AbortSignal.timeout(15_000), cache: "no-store", redirect: "error" });
   } catch (error) {
     if (error instanceof Error && error.name === "TimeoutError") throw new Error("Provider request timed out after 15 seconds. Check network access and endpoint availability.");
     throw new Error("Provider could not be reached. Verify the URL, DNS, firewall and server network route.");
@@ -31,7 +45,7 @@ async function request(url: URL, headers: Record<string, string>) {
       detail = str(body.message || body.error || obj(body.error).message).slice(0, 300);
     } catch { /* Provider status is sufficient and avoids reflecting sensitive bodies. */ }
     const guidance = response.status === 401 ? " Credentials were rejected; rotate or reconnect the token." : response.status === 403 ? " The credential is valid but lacks a required scope or the resource is forbidden." : response.status === 404 ? " The endpoint was not found; verify the installed version and base URL." : "";
-    throw new Error(`Provider returned HTTP ${response.status}.${guidance}${detail ? ` ${detail}` : ""}`);
+    throw new ProviderHttpError(`Provider returned HTTP ${response.status}.${guidance}${detail ? ` ${detail}` : ""}`, response.status);
   }
   const length = Number(response.headers.get("content-length") || 0);
   if (length > 10_000_000) throw new Error("Provider response exceeds the 10 MB synchronization limit.");
@@ -45,9 +59,47 @@ async function cache(integrationId: string, resourceKey: string, items: WidgetIt
 }
 
 function credential(record: IntegrationRecord) {
-  const secret = decryptSecret(record.credentialEncrypted);
-  if (!secret) throw new Error("No credential is stored. Reconnect this integration with an appropriately scoped credential.");
-  return secret;
+  const accounts = accountCredentials(record);
+  if (!accounts.length) throw new Error("No credential is stored. Reconnect this integration with an appropriately scoped credential.");
+  return accounts[0].token;
+}
+
+export type AccountCredential = { id: string; label: string; token: string };
+
+export type AccountMeta = { id: string; label: string; login?: string; checkedAt?: string; error?: string };
+
+/** Account labels and resolved identities stored in config.accounts (never secrets). */
+export function accountMeta(record: IntegrationRecord): AccountMeta[] {
+  return arr(obj(record.config).accounts)
+    .map(obj)
+    .map((entry) => ({ id: str(entry.id), label: str(entry.label, "Account"), login: entry.login === undefined ? undefined : str(entry.login), checkedAt: entry.checkedAt === undefined ? undefined : str(entry.checkedAt), error: entry.error === undefined ? undefined : str(entry.error) }))
+    .filter((entry) => entry.id);
+}
+
+/**
+ * Credentials are stored as an encrypted map of accountId -> token. A single legacy
+ * credential (saved before named accounts existed) is still accepted.
+ */
+export function accountCredentials(record: IntegrationRecord): AccountCredential[] {
+  if (!record.credentialEncrypted) return [];
+  let raw: string | null = null;
+  try {
+    raw = decryptSecret(record.credentialEncrypted);
+  } catch {
+    throw new Error("The stored credential cannot be decrypted with the current CREDENTIAL_ENCRYPTION_KEY. Reconnect this integration to store the credential again.");
+  }
+  if (!raw) return [];
+  let map: Record<string, string>;
+  try {
+    const parsed = JSON.parse(raw);
+    map = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, string> : { default: raw };
+  } catch {
+    map = { default: raw };
+  }
+  const meta = accountMeta(record);
+  return Object.entries(map)
+    .filter(([, token]) => typeof token === "string" && token.length > 0)
+    .map(([id, token]) => ({ id, label: meta.find((entry) => entry.id === id)?.label || "Default account", token }));
 }
 
 function customBase(record: IntegrationRecord, fallback?: string) {
@@ -61,51 +113,134 @@ function linkItem(id: unknown, title: unknown, subtitle: unknown, url: unknown, 
   return { id: str(id), title: str(title, "Untitled"), subtitle: str(subtitle), status: status === undefined ? undefined : str(status), meta: meta === undefined ? undefined : str(meta), ...(href.startsWith("https://") || href.startsWith("http://") ? { url: href } : {}) };
 }
 
-async function github(record: IntegrationRecord, mode: "test" | "sync") {
-  const token = credential(record);
-  const headers = { Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" };
+async function github(record: IntegrationRecord, mode: "test" | "sync", accounts: AccountCredential[]) {
+  if (!accounts.length) throw new Error("No GitHub account is stored. Add a token for each GitHub account you want to track.");
   const base = "https://api.github.com/";
+  const meta = accountMeta(record);
+  const headersFor = (token: string) => ({ Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" });
+  const labelFor = (id: string) => meta.find((entry) => entry.id === id)?.label || "Account";
+  const identities: { id: string; login: string }[] = [];
+  const accountErrors: { id: string; message: string }[] = [];
+
   if (mode === "test") {
-    const user = obj(await request(endpoint(base, "user"), headers));
-    return { count: 1, detail: `Authenticated as ${str(user.login, "the authorized GitHub identity")}.` };
+    for (const account of accounts) {
+      try {
+        const user = obj(await request(endpoint(base, "user"), headersFor(account.token)));
+        const login = str(user.login);
+        if (!login) throw new Error("GitHub did not return an account identity for this token.");
+        identities.push({ id: account.id, login });
+      } catch (error) {
+        accountErrors.push({ id: account.id, message: error instanceof Error ? error.message : "verification failed" });
+      }
+    }
+    if (!identities.length) throw new Error(`GitHub rejected every stored account. ${accountErrors[0]?.message ?? ""}`.trim());
+    const verified = identities.map((entry) => `${labelFor(entry.id)} → ${entry.login}`).join("; ");
+    return {
+      count: identities.length,
+      detail: `Verified ${identities.length} of ${accounts.length} GitHub account(s): ${verified}.${accountErrors.length ? ` ${accountErrors.length} account(s) failed verification.` : ""}`,
+      identities,
+      accountErrors,
+    };
   }
-  const owner = str(record.config.owner);
-  const path = owner ? `orgs/${encodeURIComponent(owner)}/repos?per_page=50&sort=updated` : "user/repos?per_page=50&sort=updated&affiliation=owner,collaborator,organization_member";
-  const payload = await request(endpoint(base, path), headers);
-  const repositories = arr(obj(payload).repositories).length ? arr(obj(payload).repositories) : arr(payload);
-  const repoItems = repositories.map((value) => { const repo = obj(value); return linkItem(repo.id, repo.full_name || repo.name, `${str(repo.language, "No language")} · ${str(repo.visibility, repo.private ? "private" : "public")} · ${str(repo.default_branch)}`, repo.html_url, repo.archived ? "archived" : "active", repo.updated_at ? `Updated ${str(repo.updated_at).slice(0, 10)}` : undefined); });
-  let count = await cache(record.id, "repos", repoItems);
-  const selected = repositories.slice(0, Math.min(10, Math.max(1, num(record.config.maxRepositories) || 5)));
+
+  const repoItems: WidgetItem[] = [];
   const resources: Record<string, WidgetItem[]> = { commits: [], issues: [], pulls: [], branches: [], workflows: [], releases: [] };
   const failures: string[] = [];
-  for (const value of selected) {
-    const repo = obj(value);
-    const fullName = str(repo.full_name);
-    if (!fullName) continue;
-    const calls = [
-      { key: "commits", path: `repos/${fullName}/commits?per_page=5` },
-      { key: "issues", path: `repos/${fullName}/issues?state=open&per_page=10` },
-      { key: "pulls", path: `repos/${fullName}/pulls?state=open&per_page=10` },
-      { key: "branches", path: `repos/${fullName}/branches?per_page=10` },
-      { key: "workflows", path: `repos/${fullName}/actions/runs?per_page=5` },
-      { key: "releases", path: `repos/${fullName}/releases?per_page=5` },
-    ];
-    const results = await Promise.allSettled(calls.map((call) => request(endpoint(base, call.path), headers)));
-    results.forEach((result, index) => {
-      const call = calls[index];
-      if (result.status === "rejected") { failures.push(`${fullName} ${call.key}: ${result.reason instanceof Error ? result.reason.message : "request failed"}`); return; }
-      const data = result.value;
-      if (call.key === "commits") resources.commits.push(...arr(data).map((entry) => { const item = obj(entry); const commit = obj(item.commit); const author = obj(commit.author); return linkItem(item.sha, obj(commit).message ? str(obj(commit).message).split("\n")[0] : "Commit", `${fullName} · ${str(author.name, "Unknown author")}`, item.html_url, str(item.sha).slice(0, 7), author.date); }));
-      if (call.key === "issues") resources.issues.push(...arr(data).filter((entry) => !obj(entry).pull_request).map((entry) => { const item = obj(entry); return linkItem(item.id, item.title, `${fullName} · #${str(item.number)} · ${str(obj(item.user).login)}`, item.html_url, item.state, arr(item.labels).map((label) => str(obj(label).name)).filter(Boolean).join(", ")); }));
-      if (call.key === "pulls") resources.pulls.push(...arr(data).map((entry) => { const item = obj(entry); return linkItem(item.id, item.title, `${fullName} · #${str(item.number)} · ${str(obj(item.user).login)}`, item.html_url, "awaiting review", `${str(obj(item.head).ref)} → ${str(obj(item.base).ref)}`); }));
-      if (call.key === "branches") resources.branches.push(...arr(data).map((entry) => { const item = obj(entry); return linkItem(`${fullName}-${str(item.name)}`, item.name, fullName, `${str(repo.html_url)}/tree/${encodeURIComponent(str(item.name))}`, item.protected ? "protected" : "unprotected"); }));
-      if (call.key === "workflows") resources.workflows.push(...arr(obj(data).workflow_runs).map((entry) => { const item = obj(entry); return linkItem(item.id, item.name || item.display_title, `${fullName} · ${str(item.event)} · #${str(item.run_number)}`, item.html_url, item.conclusion || item.status, item.updated_at); }));
-      if (call.key === "releases") resources.releases.push(...arr(data).map((entry) => { const item = obj(entry); return linkItem(item.id, item.name || item.tag_name, `${fullName} · ${str(obj(item.author).login)}`, item.html_url, item.draft ? "draft" : item.prerelease ? "prerelease" : "published", item.published_at); }));
-    });
+  const skipped: string[] = [];
+  let repositoriesSeen = 0;
+  const repositoryNames: string[] = [];
+  const limit = Math.min(10, Math.max(1, num(record.config.maxRepositories) || 5));
+
+  for (const account of accounts) {
+    const headers = headersFor(account.token);
+    const label = labelFor(account.id);
+    let login = "";
+    try {
+      const user = obj(await request(endpoint(base, "user"), headers));
+      login = str(user.login);
+      if (!login) throw new Error("GitHub did not return an account identity for this token.");
+      identities.push({ id: account.id, login });
+    } catch (error) {
+      accountErrors.push({ id: account.id, message: error instanceof Error ? error.message : "verification failed" });
+      failures.push(`${label}: ${error instanceof Error ? error.message : "verification failed"}`);
+      continue;
+    }
+
+    // One repository owner per account: an explicit account owner, the integration owner for a
+    // single-account setup, or the authenticated login itself.
+    const configuredAccounts = arr(obj(record.config).accounts).map(obj);
+    const owner = str(configuredAccounts.find((entry) => str(entry.id) === account.id)?.owner) || (accounts.length === 1 ? str(record.config.owner) : "") || login;
+    let repoPath: string;
+    try {
+      // Owners can be user accounts or organisations; /orgs/... only resolves for organisations.
+      const accountInfo = obj(await request(endpoint(base, `users/${encodeURIComponent(owner)}`), headers));
+      const isOrg = str(accountInfo.type).toLowerCase() === "organization";
+      repoPath = `${isOrg ? "orgs" : "users"}/${encodeURIComponent(owner)}/repos?per_page=50&sort=updated${isOrg ? "" : "&type=owner"}`;
+    } catch (error) {
+      failures.push(`${label}: cannot read repositories for ${owner}. ${error instanceof Error ? error.message : ""}`.trim());
+      continue;
+    }
+
+    const payload = await request(endpoint(base, repoPath), headers);
+    const repositories = arr(obj(payload).repositories).length ? arr(obj(payload).repositories) : arr(payload);
+    repositoriesSeen += repositories.length;
+    repositoryNames.push(`${owner} (${repositories.length})`);
+    for (const value of repositories) {
+      const repo = obj(value);
+      repoItems.push(linkItem(repo.id, repo.full_name || repo.name, `${str(repo.language, "No language")} · ${str(repo.visibility, repo.private ? "private" : "public")} · ${str(repo.default_branch)} · ${label}`, repo.html_url, repo.archived ? "archived" : "active", repo.updated_at ? `Updated ${str(repo.updated_at).slice(0, 10)}` : undefined));
+    }
+
+    const selected = repositories.slice(0, limit);
+    for (const value of selected) {
+      const repo = obj(value);
+      const fullName = str(repo.full_name);
+      if (!fullName) continue;
+      const calls = [
+        { key: "commits", path: `repos/${fullName}/commits?per_page=5` },
+        { key: "issues", path: `repos/${fullName}/issues?state=open&per_page=10` },
+        { key: "pulls", path: `repos/${fullName}/pulls?state=open&per_page=10` },
+        { key: "branches", path: `repos/${fullName}/branches?per_page=10` },
+        { key: "workflows", path: `repos/${fullName}/actions/runs?per_page=5` },
+        { key: "releases", path: `repos/${fullName}/releases?per_page=5` },
+      ];
+      const results = await Promise.allSettled(calls.map((call) => request(endpoint(base, call.path), headers)));
+      results.forEach((result, index) => {
+        const call = calls[index];
+        if (result.status === "rejected") {
+          const reason = result.reason;
+          // Empty repositories (409) and repositories without issues/Actions/PRs enabled (404)
+          // are normal conditions, not sync failures.
+          if (reason instanceof ProviderHttpError && (reason.status === 404 || reason.status === 409)) { skipped.push(`${fullName} ${call.key}`); return; }
+          failures.push(`${fullName} ${call.key}: ${reason instanceof Error ? reason.message : "request failed"}`);
+          return;
+        }
+        const data = result.value;
+        if (call.key === "commits") resources.commits.push(...arr(data).map((entry) => { const item = obj(entry); const commit = obj(item.commit); const author = obj(commit.author); return linkItem(item.sha, obj(commit).message ? str(obj(commit).message).split("\n")[0] : "Commit", `${fullName} · ${str(author.name, "Unknown author")} · ${label}`, item.html_url, str(item.sha).slice(0, 7), author.date); }));
+        if (call.key === "issues") resources.issues.push(...arr(data).filter((entry) => !obj(entry).pull_request).map((entry) => { const item = obj(entry); return linkItem(item.id, item.title, `${fullName} · #${str(item.number)} · ${str(obj(item.user).login)} · ${label}`, item.html_url, item.state, arr(item.labels).map((tag) => str(obj(tag).name)).filter(Boolean).join(", ")); }));
+        if (call.key === "pulls") resources.pulls.push(...arr(data).map((entry) => { const item = obj(entry); return linkItem(item.id, item.title, `${fullName} · #${str(item.number)} · ${str(obj(item.user).login)} · ${label}`, item.html_url, "awaiting review", `${str(obj(item.head).ref)} → ${str(obj(item.base).ref)}`); }));
+        if (call.key === "branches") resources.branches.push(...arr(data).map((entry) => { const item = obj(entry); return linkItem(`${fullName}-${str(item.name)}`, item.name, `${fullName} · ${label}`, `${str(repo.html_url)}/tree/${encodeURIComponent(str(item.name))}`, item.protected ? "protected" : "unprotected"); }));
+        if (call.key === "workflows") resources.workflows.push(...arr(obj(data).workflow_runs).map((entry) => { const item = obj(entry); return linkItem(item.id, item.name || item.display_title, `${fullName} · ${str(item.event)} · #${str(item.run_number)} · ${label}`, item.html_url, item.conclusion || item.status, item.updated_at); }));
+        if (call.key === "releases") resources.releases.push(...arr(data).map((entry) => { const item = obj(entry); return linkItem(item.id, item.name || item.tag_name, `${fullName} · ${str(obj(item.author).login)} · ${label}`, item.html_url, item.draft ? "draft" : item.prerelease ? "prerelease" : "published", item.published_at); }));
+      });
+    }
   }
-  for (const [key, items] of Object.entries(resources)) { await cache(record.id, key, items.slice(0, 100)); count += items.length; }
-  if (failures.length) throw new Error(`Repository inventory synced, but ${failures.length} resource requests failed. ${failures[0]}`);
-  return { count, detail: `Synchronized ${repoItems.length} repositories and supported resources for ${selected.length} repositories.` };
+
+  const dedupe = (items: WidgetItem[]) => [...new Map(items.map((item) => [`${item.id}`, item])).values()];
+  const repos = dedupe(repoItems);
+  let count = await cache(record.id, "repos", repos);
+  for (const [key, items] of Object.entries(resources)) {
+    const unique = dedupe(items).slice(0, 100);
+    await cache(record.id, key, unique);
+    count += unique.length;
+  }
+  if (!identities.length) throw new Error(`No GitHub account could be authenticated. ${failures[0] ?? ""}`.trim());
+  if (failures.length) throw new Error(`Synchronized with ${identities.length} of ${accounts.length} accounts, but ${failures.length} failed. ${failures[0]}`);
+  return {
+    count,
+    detail: `Synchronized ${repos.length} repositories and supported resources across ${identities.length} account(s): ${repositoryNames.join(", ")}.${skipped.length ? ` Skipped ${skipped.length} unavailable resources (empty repositories or disabled features).` : ""}`,
+    identities,
+    accountErrors,
+  };
 }
 
 async function vercel(record: IntegrationRecord, mode: "test" | "sync") {
@@ -212,10 +347,34 @@ async function upcloud(record: IntegrationRecord, mode: "test" | "sync") {
   return { count, detail: `UpCloud returned ${items.length} servers. CPU, RAM, storage and network metrics were not inferred.` };
 }
 
-const adapters = { github, vercel, coolify, cloudflare, invoiceshelf: invoiceShelf, opencode: openCode, openrouter: openRouter, ollama, upcloud } as const;
+type AdapterResult = { count: number; detail: string; identities?: { id: string; login: string }[]; accountErrors?: { id: string; message: string }[] };
+type Adapter = (record: IntegrationRecord, mode: "test" | "sync", accounts: AccountCredential[]) => Promise<AdapterResult>;
+
+const adapters: Record<string, Adapter> = { github, vercel, coolify, cloudflare, invoiceshelf: invoiceShelf, opencode: openCode, openrouter: openRouter, ollama, upcloud };
+
+/** Records resolved account identities (never tokens) back into config.accounts. */
+async function persistIdentities(record: IntegrationRecord, result: AdapterResult) {
+  if (!result.identities?.length && !result.accountErrors?.length) return;
+  const existing = arr(obj(record.config).accounts).map(obj);
+  const next: Record<string, unknown>[] = existing.map((entry): Record<string, unknown> => {
+    const id = str(entry.id);
+    const identity = result.identities?.find((value) => value.id === id);
+    const failure = result.accountErrors?.find((value) => value.id === id);
+    const placeholder = !entry.label || /^(Default account|Account \d+)$/.test(str(entry.label));
+    return {
+      ...entry,
+      ...(identity ? { login: identity.login, ...(placeholder ? { label: identity.login } : {}), checkedAt: new Date().toISOString() } : {}),
+      ...(failure ? { error: failure.message.slice(0, 300), checkedAt: new Date().toISOString() } : { error: undefined }),
+    };
+  });
+  for (const identity of result.identities || []) {
+    if (!next.some((entry) => str(entry.id) === identity.id)) next.push({ id: identity.id, label: identity.login, login: identity.login, checkedAt: new Date().toISOString() });
+  }
+  await db.update(integrations).set({ config: { ...record.config, accounts: next }, updatedAt: new Date() }).where(eq(integrations.id, record.id));
+}
 
 export async function runIntegration(record: IntegrationRecord, mode: "test" | "sync") {
-  const adapter = adapters[record.key as keyof typeof adapters];
+  const adapter = adapters[record.key];
   if (!adapter) throw new Error("No server adapter is registered for this integration.");
   let runId: string | null = null;
   if (mode === "sync") {
@@ -223,13 +382,14 @@ export async function runIntegration(record: IntegrationRecord, mode: "test" | "
     runId = run.id;
   }
   try {
-    const result = await adapter(record, mode);
-    await db.update(integrations).set({ status: "connected", enabled: true, lastCheckedAt: new Date(), lastSuccessAt: new Date(), lastSyncAt: mode === "sync" ? new Date() : record.lastSyncAt, lastError: null, updatedAt: new Date() }).where(eq(integrations.id, record.id));
+    const result = await adapter(record, mode, accountCredentials(record));
+    await persistIdentities(record, result);
+    await db.update(integrations).set({ status: "connected", enabled: true, lastCheckedAt: new Date(), lastSuccessAt: new Date(), lastSyncAt: mode === "sync" ? new Date() : record.lastSyncAt, lastError: result.accountErrors?.length ? `${result.accountErrors.length} account(s) failed verification.` : null, updatedAt: new Date() }).where(eq(integrations.id, record.id));
     if (runId) await db.update(syncRuns).set({ status: "success", recordsSynced: result.count, finishedAt: new Date() }).where(eq(syncRuns.id, runId));
     return result;
   } catch (error) {
     let message = (error instanceof Error ? error.message : "Integration request failed.").replace(/(token|password|authorization|api[_-]?key)\s*[:=]\s*\S+/gi, "$1=[redacted]").slice(0, 1200);
-    try { const stored = decryptSecret(record.credentialEncrypted); if (stored) for (const part of [stored, ...stored.split(":")]) if (part.length >= 4) message = message.replaceAll(part, "[redacted]"); } catch { /* The generic provider error remains available without exposing credential material. */ }
+    try { for (const account of accountCredentials(record)) if (account.token.length >= 6) message = message.replaceAll(account.token, "[redacted]"); } catch { /* The generic provider error remains available without exposing credential material. */ }
     const cached = await db.select({ id: integrationCache.id }).from(integrationCache).where(eq(integrationCache.integrationId, record.id)).limit(1);
     await db.update(integrations).set({ status: cached.length ? "degraded" : "error", lastCheckedAt: new Date(), lastError: message, updatedAt: new Date() }).where(eq(integrations.id, record.id));
     if (runId) await db.update(syncRuns).set({ status: "failed", error: message, finishedAt: new Date() }).where(eq(syncRuns.id, runId));
