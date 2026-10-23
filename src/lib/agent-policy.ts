@@ -48,9 +48,21 @@ export function agentPolicy(): PolicyFile {
   return cached;
 }
 
+/**
+ * Roots that exist on the worker host, not inside this web container.
+ *
+ * When the worker runs on another machine (for example a Coolify container with a
+ * mounted /workspace), the web container cannot stat those paths. Existence is
+ * verified by the worker itself before it starts a job, so the API only checks
+ * the allowlist here.
+ */
+export function remoteRoots() {
+  return (process.env.AGENT_REMOTE_ROOTS || "").split(";").map((entry) => entry.trim()).filter(Boolean);
+}
+
 export function allowedRoots() {
   const extra = (process.env.AGENT_ALLOWED_ROOTS || "").split(";").map((entry) => entry.trim()).filter(Boolean);
-  return [...new Set([...agentPolicy().allowedRoots, ...extra])];
+  return [...new Set([...agentPolicy().allowedRoots, ...extra, ...remoteRoots()])];
 }
 
 /** Normalises a path for prefix comparison (case-insensitive on Windows). */
@@ -66,6 +78,9 @@ export function checkDirectory(directory: string): { ok: boolean; error?: string
   const roots = allowedRoots().map(normalise);
   const inside = roots.some((root) => target === root || target.startsWith(`${root}\\`) || target.startsWith(`${root}/`));
   if (!inside) return { ok: false, error: `That directory is outside the agent allowlist (${allowedRoots().join(", ")}). Add it to config/agent-policy.json to permit it.` };
+  // A remote root lives on the worker host. The worker verifies it before running.
+  const remote = remoteRoots().map(normalise);
+  if (remote.some((root) => target === root || target.startsWith(`${root}\\`) || target.startsWith(`${root}/`))) return { ok: true };
   try {
     const stat = statSync(value);
     if (!stat.isDirectory()) return { ok: false, error: "That path is not a directory." };

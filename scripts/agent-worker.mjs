@@ -48,6 +48,8 @@ const MAX_OUTPUT = 80_000;
 const MAX_RESULT = 6_000;
 const PID_FILE = path.join(repoRoot, ".agent-worker.pid");
 const WORKER_NAME = `${os.hostname()}#${process.pid}`;
+/** File heartbeat for container health checks; the database heartbeat stays authoritative. */
+const HEARTBEAT_FILE = process.env.AGENT_HEARTBEAT_FILE || path.join(os.tmpdir(), "worker-heartbeat");
 
 // ---------------------------------------------------------------------------
 // Guard rails (mirrors src/lib/agent-policy.ts)
@@ -172,6 +174,11 @@ async function heartbeat(state = {}) {
      on conflict (key) do update set value = excluded.value, updated_at = now()`,
     ["agent.worker.heartbeat", JSON.stringify(value)],
   );
+  try {
+    writeFileSync(HEARTBEAT_FILE, JSON.stringify(value), "utf8");
+  } catch (error) {
+    log(`could not write heartbeat file ${HEARTBEAT_FILE}: ${error.message}`);
+  }
 }
 
 /** Claims one queued job. Safe against a second worker running at the same time. */
