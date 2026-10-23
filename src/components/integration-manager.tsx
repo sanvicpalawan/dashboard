@@ -4,9 +4,25 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, Blocks, Check, KeyRound, LoaderCircle, Plug, Plus, RefreshCw, Search, Settings2, Trash2, X } from "lucide-react";
 import { hasPermission, type SessionUser } from "@/lib/permissions";
 import { cn, relativeTime } from "@/lib/utils";
+import { AGENT_ACCESS } from "@/lib/agent-access";
 
 type Integration = { id: string; key: string; name: string; category: string; description: string; status: string; enabled: boolean; authMethod: string; baseUrl: string | null; docsUrl: string; capabilities: string[]; scopes: string[]; allowedRoles: string[]; config: Record<string, any>; hasCredential: boolean; credentialHint: string | null; lastSyncAt: string | null; lastSuccessAt: string | null; lastError: string | null; lastCheckedAt: string | null };
 type History = { run: { id: string; integrationId: string; status: string; triggerType: string; recordsSynced: number; error: string | null; startedAt: string; finishedAt: string | null }; integrationName: string };
+
+/**
+ * Shows whether OpenCode itself can call this provider, separately from whether
+ * the dashboard has a stored credential. Green here always means a request
+ * actually succeeded, never that a token merely exists.
+ */
+function AgentAccessLine({ integrationKey }: { integrationKey: string }) {
+  const access = AGENT_ACCESS.find((entry) => entry.key === integrationKey);
+  if (!access) return <div className="agent-access"><strong>OpenCode: not assessed</strong><small>No verified access entry for this provider yet.</small></div>;
+  const headline = access.access === "direct" ? "OpenCode can use it" : access.access === "dashboard" ? "Dashboard only" : "OpenCode blocked";
+  return <div className={cn("agent-access", `agent-access-${access.access}`)}>
+    <strong>{headline}{access.verified ? <span style={{ fontWeight: 400, color: "var(--muted)" }}> · checked {access.verified}</span> : null}</strong>
+    <small>{access.access === "blocked" ? access.note : access.permissions}</small>
+  </div>;
+}
 
 export function IntegrationManager({ user }: { user: SessionUser }) {
   const [items, setItems] = useState<Integration[]>([]);
@@ -80,7 +96,8 @@ export function IntegrationManager({ user }: { user: SessionUser }) {
     {loading ? <div className="integration-grid">{[1, 2, 3, 4].map((item) => <div className="card integration-card" key={item}><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div>)}</div> : <div className="integration-grid">{filtered.map((item) => <section className="card integration-card" key={item.id}>
       <div className="integration-top"><div className="integration-logo">{item.name.slice(0, 2).toUpperCase()}</div><div className="integration-title"><h3>{item.name}{item.key === "opencode" && <span className="badge" style={{ marginLeft: 7 }}>Primary agent</span>}</h3><p>{item.category} · {item.authMethod}</p></div><span className={`badge badge-${item.status}`}>{item.status}</span></div>
       <p className="integration-description">{item.description}</p><div className="integration-meta">{item.capabilities.slice(0, 3).map((capability) => <span className="badge" key={capability}>{capability}</span>)}</div>
-      <div style={{ color: "var(--muted)", fontSize: 9, lineHeight: 1.7 }}>{item.hasCredential ? `Credential ${item.credentialHint || "stored"}` : "No credential stored"} · Last success {relativeTime(item.lastSuccessAt)}<br />Last sync {relativeTime(item.lastSyncAt)}</div>
+      <div style={{ color: "var(--muted)", fontSize: 9, lineHeight: 1.7 }}>{item.hasCredential ? `Credential ${item.credentialHint || "stored"}` : "No credential stored"} · Last successful test {relativeTime(item.lastSuccessAt)}<br />Last sync {relativeTime(item.lastSyncAt)} · Scopes: {item.scopes.length ? item.scopes.join(", ") : "none recorded"}</div>
+      <AgentAccessLine integrationKey={item.key} />
       {item.lastError && <div className="integration-error">{item.lastError}</div>}
       <div className="integration-actions">{canManage && <button className="button button-sm button-primary" onClick={() => open(item)}><Settings2 size={12} />{item.hasCredential || item.baseUrl ? "Configure" : "Connect"}</button>}{canManage && <button className="button button-sm" disabled={Boolean(busy)} onClick={() => action(item, "test")}>{busy === `${item.key}-test` ? <LoaderCircle size={12} className="animate-spin" /> : <Plug size={12} />}Test</button>}{canManage && <button className="button button-sm" disabled={Boolean(busy) || !item.hasCredential && item.key !== "ollama"} onClick={() => action(item, "sync")}>{busy === `${item.key}-sync` ? <LoaderCircle size={12} className="animate-spin" /> : <RefreshCw size={12} />}Sync</button>}<a className="button button-sm button-ghost" href={item.docsUrl} target="_blank" rel="noreferrer" title="Official documentation"><ArrowUpRight size={13} /></a><div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>{canManage && item.hasCredential && <button className="button button-sm button-ghost" onClick={() => toggle(item)}>{item.enabled ? "Disable" : "Enable"}</button>}{canCredentials && item.hasCredential && <button className="icon-button" title="Disconnect and remove local credential" onClick={() => action(item, "disconnect")}><Trash2 size={13} /></button>}</div></div>
     </section>)}</div>}

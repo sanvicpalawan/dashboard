@@ -50,9 +50,9 @@ export const AGENT_ACCESS: AgentAccess[] = [
   },
   {
     key: "vercel",
-    access: "blocked",
-    permissions: "None until a valid token is stored",
-    note: "Vercel answers invalidToken:true for the stored token, so it is expired, revoked or was copied incorrectly. Create a team-scoped token at vercel.com/account/tokens and save it here.",
+    access: "direct",
+    permissions: "Through the Vercel MCP that OpenCode is signed into: projects, deployments, build logs, domains and settings. Deploying or promoting to production still needs approval.",
+    note: "The dashboard's stored token answers invalidToken:true, so the dashboard widgets stay red, but OpenCode itself has a working Vercel session (verified as growpalawan@gmail.com). Replace the dashboard token from vercel.com/account/tokens to make the dashboard rows real too.",
     verified: "2026-10-23",
   },
   {

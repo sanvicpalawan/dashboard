@@ -165,7 +165,13 @@ export function AgentQueue({ user, initialJobs, initialStatus }: { user: Session
           <datalist id="agent-roots">{status.allowedRoots.map((root) => <option key={root} value={root} />)}</datalist>
           <small>Must be inside the allowlist: {status.allowedRoots.join(", ")}. The job runs with that folder as its working directory.</small>
         </div>
-        <div className="field"><label>Model (optional)</label><input value={model} onChange={(event) => setModel(event.target.value)} placeholder="provider/model" /><small>Blank uses the OpenCode default.</small></div>
+        <div className="field"><label>Model</label>
+          <select value={model} onChange={(event) => setModel(event.target.value)}>
+            <option value="">Standard (OpenCode default)</option>
+            <option value="ollama/qwen2.5-coder:3b">Quick (local Qwen 3B, free)</option>
+          </select>
+          <small>Quick keeps the work on this machine and costs nothing. Use Standard for complex changes.</small>
+        </div>
         <div className="field"><label>Approval</label>
           <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11, marginTop: 8 }}>
             <input type="checkbox" checked={requiresApproval} onChange={(event) => setRequiresApproval(event.target.checked)} />

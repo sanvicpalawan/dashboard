@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * Palawan Collective agent worker.
  *
@@ -91,6 +91,21 @@ function guardReasons(text) {
     }
   }
   return [...new Set(reasons)];
+}
+
+/** Compiles the deny list once, so every tool call can be checked cheaply. */
+const guardRules = policy.dangerPatterns.flatMap((rule) => {
+  try {
+    return [{ id: rule.id, reason: rule.reason, regex: new RegExp(rule.pattern, "i") }];
+  } catch {
+    return [];
+  }
+});
+
+/** Returns the first matched deny rule for a command the agent is about to run. */
+function guardViolation(command) {
+  if (!command) return null;
+  return guardRules.find((rule) => rule.regex.test(command)) || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -244,6 +259,20 @@ function killTree(child) {
   }
 }
 
+/**
+ * Prepended to every job instruction. This is guidance the agent follows; the
+ * hard enforcement is in guardViolation() below, which stops the job process the
+ * moment a denied command appears in the stream.
+ */
+const JOB_PREAMBLE = [
+  "You are running as an unattended job from the Palawan Collective Command Center, on the owner's machine.",
+  "Work only inside this directory. Do not modify other repositories.",
+  "You may: read and edit files here, run builds/linters/tests, create a feature branch, commit, and push that branch to the existing remote.",
+  "You must not: force-push, delete remote branches, delete repositories, drop or truncate databases, delete files outside this task, deploy to production, change DNS, or spend money.",
+  "If the task genuinely needs one of those, stop and reply with a line starting BLOCKED and say what approval is needed.",
+  "Finish with a short report: what changed, checks run and results, branch and commit, anything unfinished.",
+].join("\n");
+
 async function runJob(job) {
   const startedAt = Date.now();
   log(`start ${job.id} "${job.title}" in ${job.directory}`);
@@ -261,16 +290,18 @@ async function runJob(job) {
   }
 
   const args = ["run", "--format", "json", "--auto"];
-  if (job.model || DEFAULT_MODEL) args.push("--model", job.model || DEFAULT_MODEL);
+  const model = job.model || DEFAULT_MODEL;
+  if (model) args.push("--model", model);
   if (job.agent && !["build", "default"].includes(job.agent)) args.push("--agent", job.agent);
   args.push("--title", job.title.slice(0, 120));
-  args.push(job.instructions);
+  args.push(`${JOB_PREAMBLE}\n\nTask:\n${job.instructions}`);
 
   let output = "";
   let lastText = "";
   let sessionId = job.session_id || null;
   let timedOut = false;
   let cancelled = false;
+  let violation = null;
 
   const child = spawn(OPENCODE_BIN, args, {
     cwd: job.directory,
@@ -307,7 +338,16 @@ async function runJob(job) {
     if (part.type === "tool" || event.type === "tool") {
       const name = part.tool || part.name || "tool";
       const state = part.state || {};
-      append(`> tool ${name}${state.status ? ` (${state.status})` : ""}`);
+      const input = state.input && typeof state.input === "object" ? state.input : {};
+      const command = typeof input.command === "string" ? input.command : typeof input.cmd === "string" ? input.cmd : null;
+      const match = guardViolation(command);
+      if (match && !violation) {
+        violation = `${match.reason} The job tried to run: ${command.split(/\r?\n/)[0].slice(0, 300)}`;
+        append(`> BLOCKED ${match.id}: ${command.split(/\r?\n/)[0].slice(0, 300)}`);
+        killTree(child);
+        return;
+      }
+      append(`> tool ${name}${command ? `: ${command.split(/\r?\n/)[0].slice(0, 160)}` : state.status ? ` (${state.status})` : ""}`);
       return;
     }
     if (event.type === "error" || event.error) {
@@ -356,6 +396,11 @@ async function runJob(job) {
 
   const durationSeconds = Math.round((Date.now() - startedAt) / 1000);
 
+  // A denied command stops the job immediately, whatever the exit code says.
+  if (violation) {
+    await finish(job, { status: "failed", error: violation, output, exitCode, sessionId, result: lastText.slice(0, MAX_RESULT), durationSeconds });
+    return;
+  }
   if (cancelled) {
     await finish(job, { status: "cancelled", error: job.error || null, output, exitCode, sessionId, result: lastText.slice(0, MAX_RESULT), durationSeconds });
     return;

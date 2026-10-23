@@ -420,3 +420,12 @@ a.widget-item-title:hover { color: var(--accent); }
 .agent-badge-succeeded { color: var(--success); background: color-mix(in srgb, var(--success) 8%, transparent); }
 .agent-badge-failed { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
 .agent-badge-cancelled { color: var(--muted); background: var(--elevated); opacity: .8; }
+.agent-access { border: 1px solid var(--border); border-left-width: 2px; border-radius: 7px; padding: 7px 9px; margin-bottom: 12px; font-size: 10px; line-height: 1.6; }
+.agent-access strong { display: block; font-size: 10px; font-weight: 600; }
+.agent-access small { color: var(--muted); display: block; margin-top: 2px; }
+.agent-access-direct { border-left-color: var(--success); }
+.agent-access-direct strong { color: var(--success); }
+.agent-access-dashboard { border-left-color: var(--warning); }
+.agent-access-dashboard strong { color: var(--warning); }
+.agent-access-blocked { border-left-color: var(--danger); }
+.agent-access-blocked strong { color: var(--danger); }

@@ -309,11 +309,30 @@ Environment knobs: `AGENT_POLL_SECONDS` (default 5), `AGENT_TIMEOUT_MINUTES` (de
 - One job at a time, claimed with `FOR UPDATE SKIP LOCKED`, so two workers can never run the same job.
 - A job left `running` by a dead worker is requeued after `AGENT_STALE_MINUTES`, up to `max_attempts`.
 - Instructions matching a rule in `config/agent-policy.json` (force push, drop database, delete a
-  repository, terraform destroy, upgrade a plan) are saved as `awaiting_approval` and never executed
-  until someone with `agent.manage` approves them.
+  repository, terraform destroy, production deploy, DNS writes, spending) are saved as
+  `awaiting_approval` and never executed until someone with `agent.manage` approves them.
+- The same rules are enforced again while the job runs: the worker reads every tool call from the
+  OpenCode event stream, and a shell command matching a guard rule stops the process tree at once and
+  fails the job with the blocked command recorded. OpenCode's own permission list is not used because
+  this build does not enforce it in `run` mode.
+- Every job gets a fixed preamble with the boundaries (work in this folder only, feature branches and
+  pushes allowed, destructive operations not) and is asked to report `BLOCKED` rather than guess.
 - A cancel is enforced by the worker: it notices within about five seconds and stops the process tree.
 - The worker needs the laptop to be on. The dashboard, the queue and the records stay available
   without it because they live in Neon; only execution pauses.
+
+### Model choice
+
+The job form offers two models:
+
+| Option | Model | Use |
+|---|---|---|
+| Standard | OpenCode default (the strong hosted model) | Anything involving judgement, refactors, debugging |
+| Quick | `ollama/qwen2.5-coder:3b` on this machine | Small, well-specified edits, docs, renames |
+
+Quick costs nothing and nothing leaves the laptop, but the model runs on CPU: expect minutes rather
+than seconds, and it needs `OLLAMA_CONTEXT_LENGTH=32768` so OpenCode's system prompt fits.
+
 
 ### Credential bridge
 

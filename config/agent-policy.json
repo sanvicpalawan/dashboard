@@ -1,21 +1,26 @@
 {
-  "description": "Guard rails for the local OpenCode agent worker. Read by src/lib/agent-policy.ts (dashboard API) and scripts/agent-worker.mjs (executor) so both enforce the same rules.",
+  "description": "Guard rails for the local OpenCode agent worker. Read by src/lib/agent-policy.ts (dashboard API) and scripts/agent-worker.mjs (executor) so both enforce the same rules. A job whose instructions match a rule is held for approval; a job that runs a shell command matching a rule is stopped and marked failed.",
   "version": 20261023,
   "allowedRoots": ["C:\\dev", "C:\\Users\\growp\\openlivery"],
   "dangerPatterns": [
     {
       "id": "force-push",
-      "pattern": "(force[- ]?push|push\\s+--force|git\\s+push\\s+\\S*\\s*-f\\b)",
+      "pattern": "(force[- ]?push|push\\s+--force|git\\s+push\\s+\\S*\\s+-f\\b|push\\s+--mirror)",
       "reason": "Force-pushing rewrites shared branch history."
     },
     {
+      "id": "delete-branch",
+      "pattern": "git\\s+push\\s+\\S+\\s+--delete",
+      "reason": "Deleting a remote branch removes work other people may depend on."
+    },
+    {
       "id": "drop-database",
-      "pattern": "(drop\\s+(database|schema)|truncate\\s+table|delete\\s+from\\s+\\w+\\s*;)",
+      "pattern": "(drop\\s+(database|schema|table)|truncate\\s+table|delete\\s+from\\s+\\w+\\s*;)",
       "reason": "Dropping or truncating database objects destroys data."
     },
     {
       "id": "recursive-delete",
-      "pattern": "(rm\\s+-rf\\s+(/|~|[A-Za-z]:\\\\\\s*$)|Remove-Item\\s+.*-Recurse\\s+-Force\\s+[A-Za-z]:\\\\(\\s|$))",
+      "pattern": "(rm\\s+-rf\\s+(/|~|[A-Za-z]:\\\\\\s*$)|rm\\s+-fr\\s+/|Remove-Item\\s+.*-Recurse\\s+-Force\\s+[A-Za-z]:\\\\(\\s|$))",
       "reason": "Recursive deletion of a drive root or home directory is irreversible."
     },
     {
@@ -25,12 +30,22 @@
     },
     {
       "id": "destroy-infrastructure",
-      "pattern": "(terraform\\s+(destroy|apply)|coolify\\s+.*delete|delete\\s+(the\\s+)?(vps|server|volume\\s+volume))",
+      "pattern": "(terraform\\s+(destroy|apply)|coolify\\s+.*delete|delete\\s+(the\\s+)?(vps|server|volume))",
       "reason": "Infrastructure creation and destruction changes live, billable systems."
     },
     {
+      "id": "production-deploy",
+      "pattern": "(deploy\\s+(to\\s+)?production|production\\s+deploy|--prod\\b|wrangler\\s+deploy|vercel\\s+(deploy\\s+)?--prod|promote\\s+to\\s+production)",
+      "reason": "Production deployments need explicit approval."
+    },
+    {
+      "id": "dns-change",
+      "pattern": "((?=[^\\n]*dns[ _]?records?)(?=[^\\n]*(-x\\s*(post|put|patch|delete)|--request\\s+(post|put|patch|delete)))|(create|update|patch|delete|change)\\s+(a\\s+)?dns|nameserver|zone\\s+settings\\s+(edit|change))",
+      "reason": "DNS and nameserver changes can take live sites offline."
+    },
+    {
       "id": "spending",
-      "pattern": "(upgrade\\s+(the\\s+|to\\s+)?(plan|subscription|tier)|add\\s+a\\s+payment\\s+method|increase\\s+(the\\s+)?(spending\\s+limit|budget))",
+      "pattern": "(upgrade\\s+(the\\s+|to\\s+)?(plan|subscription|tier)|add\\s+a\\s+payment\\s+method|increase\\s+(the\\s+)?(spending\\s+limit|budget)|npm\\s+publish|create\\s+(a\\s+)?(paid|billable)\\s+(resource|server|instance))",
       "reason": "Creating or increasing spending needs explicit approval."
     }
   ]
