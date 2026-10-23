@@ -131,6 +131,12 @@ export function AppShell({ children, user, notifications, theme, accent, density
           <div className="topbar-actions">
             {user.demoMode && <span className="demo-chip"><Sparkles size={10} />Demo data</span>}
             <button className="command-trigger" onClick={() => setCommandOpen(true)}><Search size={14} /><span>Search workspace</span><kbd>⌘ K</kbd></button>
+            <div className="topbar-quicklaunch" aria-label="Quick launch">
+              <a className="icon-button" href="http://localhost:3080" target="_blank" rel="noopener noreferrer" title="LibreChat" aria-label="LibreChat"><ExternalLink size={15} /></a>
+              <a className="icon-button" href="http://localhost:3000" target="_blank" rel="noopener noreferrer" title="OpenLivery" aria-label="OpenLivery"><ExternalLink size={15} /></a>
+              <a className="icon-button" href="http://localhost:8090" target="_blank" rel="noopener noreferrer" title="InvoiceShelf" aria-label="InvoiceShelf"><ExternalLink size={15} /></a>
+              <Link className="icon-button" href="/agent" title="Agent jobs" aria-label="Agent jobs"><Bot size={15} /></Link>
+            </div>
             <div style={{ position: "relative" }}><button className="icon-button" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`} onClick={() => setMenu(menu === "notifications" ? null : "notifications")}><Bell size={16} />{unread > 0 && <span className="notification-dot" />}</button>
               {menu === "notifications" && <div className="dropdown dropdown-wide"><div className="dropdown-header" style={{ display: "flex", alignItems: "center" }}><div><strong>Notifications</strong><p>{unread} unread updates</p></div>{unread > 0 && <button className="button button-sm button-ghost" style={{ marginLeft: "auto" }} onClick={() => markRead()}>Mark all read</button>}</div><div style={{ maxHeight: 390, overflow: "auto" }}>{items.length ? items.slice(0, 12).map((item) => <div className="notification-item" key={item.id} style={{ opacity: item.readAt ? .62 : 1 }}><strong>{item.title}</strong><p>{item.body}</p><time>{relativeTime(item.createdAt)}</time>{item.link && <Link href={item.link} onClick={() => markRead(item.id)} style={{ marginLeft: 10, color: "var(--accent)", fontSize: 9 }}>Open</Link>}</div>) : <div className="empty-state"><Bell size={20} /><strong>All clear</strong><p>No notifications have been recorded.</p></div>}</div></div>}
             </div>
