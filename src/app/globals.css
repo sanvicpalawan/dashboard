@@ -420,6 +420,11 @@ a.widget-item-title:hover { color: var(--accent); }
 .agent-badge-succeeded { color: var(--success); background: color-mix(in srgb, var(--success) 8%, transparent); }
 .agent-badge-failed { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
 .agent-badge-cancelled { color: var(--muted); background: var(--elevated); opacity: .8; }
+.quick-launch-bar { margin-bottom: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: color-mix(in srgb, var(--surface) 80%, var(--elevated)); padding: 10px 14px; }
+.quick-launch-inner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.quick-launch-label { font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.quick-launch-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.quick-launch-buttons .button { min-height: 32px; padding: 6px 12px; font-size: 12px; white-space: nowrap; }
 .agent-access { border: 1px solid var(--border); border-left-width: 2px; border-radius: 7px; padding: 7px 9px; margin-bottom: 12px; font-size: 10px; line-height: 1.6; }
 .agent-access strong { display: block; font-size: 10px; font-weight: 600; }
 .agent-access small { color: var(--muted); display: block; margin-top: 2px; }
