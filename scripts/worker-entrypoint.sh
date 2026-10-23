@@ -5,17 +5,25 @@
 # root-only files inside the container. Nothing is baked into the image.
 set -eu
 
-if [ -n "${OPENCODE_AUTH_JSON:-}" ]; then
+if [ -n "${OPENCODE_AUTH_JSON_B64:-}" ]; then
+  umask 077
+  printf '%s' "$OPENCODE_AUTH_JSON_B64" | base64 -d > /tmp/opencode-auth.json
+  OPENCODE_AUTH_JSON_FILE=/tmp/opencode-auth.json
+elif [ -n "${OPENCODE_AUTH_JSON:-}" ]; then
   umask 077
   printf '%s' "$OPENCODE_AUTH_JSON" > /tmp/opencode-auth.json
-  if opencode auth import --standalone /tmp/opencode-auth.json; then
+  OPENCODE_AUTH_JSON_FILE=/tmp/opencode-auth.json
+fi
+
+if [ -n "${OPENCODE_AUTH_JSON_FILE:-}" ]; then
+  if opencode auth import --standalone "$OPENCODE_AUTH_JSON_FILE"; then
     echo "[entrypoint] OpenCode credentials imported"
   else
     echo "[entrypoint] WARN: opencode auth import failed; jobs that need a hosted model will fail"
   fi
-  rm -f /tmp/opencode-auth.json
+  rm -f "$OPENCODE_AUTH_JSON_FILE"
 else
-  echo "[entrypoint] OPENCODE_AUTH_JSON is not set; only keyless providers will work"
+  echo "[entrypoint] No OpenCode credentials supplied; only keyless providers will work"
 fi
 
 if [ -n "${GITHUB_TOKEN:-}" ]; then
