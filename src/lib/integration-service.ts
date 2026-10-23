@@ -268,6 +268,9 @@ async function vercel(record: IntegrationRecord, mode: "test" | "sync") {
       const payload = obj(await request(endpoint("https://api.vercel.com/", "v2/user"), headers));
       return { count: 1, detail: `Authenticated Vercel user ${str(obj(payload.user).username, "verified")}.` };
     } catch (error) {
+      // A token that is genuinely invalid (revoked/expired/copied wrong) fails every endpoint,
+      // so do not retry the same dead token against the projects endpoint.
+      if (error instanceof ProviderHttpError && /invalidToken/i.test(error.message)) throw error;
       // Team-scoped tokens cannot read the personal user endpoint; verify against team projects instead.
       if (!(error instanceof ProviderHttpError) || (error.status !== 403 && error.status !== 404)) throw error;
       const payload = obj(await request(endpoint("https://api.vercel.com/", `v9/projects?${team}limit=1`), headers));
