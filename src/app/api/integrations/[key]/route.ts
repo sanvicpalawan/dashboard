@@ -15,6 +15,7 @@ const patchSchema = z.object({
   secret: z.string().max(4000).optional(),
   accountId: z.string().max(100).optional(),
   accountLabel: z.string().max(80).optional(),
+  replace: z.boolean().optional(),
   enabled: z.boolean().optional(),
   allowedRoles: z.array(z.string().max(100)).max(30).optional(),
   config: z.record(z.string(), z.unknown()).optional(),
@@ -70,6 +71,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ke
   let savedAccountId: string | null = null;
 
   if (secret) {
+    // A single-token save (Configure modal) replaces the stored credential instead of
+    // stacking a new account on top of a stale one. "Add account" passes accountId and
+    // is intentionally additive.
+    if (parsed.data.replace) {
+      credentials = {};
+      nextAccounts = [];
+    }
     // Replace a specific account, seed the first account, or add another account.
     const targetId = parsed.data.accountId || (Object.keys(credentials).length === 0 ? "default" : `acc_${randomBytes(5).toString("hex")}`);
     credentials = { ...credentials, [targetId]: secret };
