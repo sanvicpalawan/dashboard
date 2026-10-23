@@ -35,10 +35,10 @@ export const AGENT_ACCESS: AgentAccess[] = [
     verified: "2026-10-23",
   },
   {
-    key: "ollama",
+    key: "openlivery",
     access: "direct",
-    permissions: "Local model inventory and generation",
-    note: "Reachable at http://localhost:11434 from this machine and already registered as an OpenCode provider.",
+    permissions: "Read agency identity, clients and agents from the Openlivery instance (cookie session).",
+    note: "Connects to the Openlivery instance configured in Admin → Integrations using stored email:password. The session cookie is minted per request and never exposed to the browser.",
     verified: "2026-10-23",
   },
   {
@@ -71,9 +71,9 @@ export const AGENT_ACCESS: AgentAccess[] = [
   },
   {
     key: "invoiceshelf",
-    access: "blocked",
-    permissions: "None until a bearer token is minted",
-    note: "InvoiceShelf 2.x has no token screen. POST /api/v1/auth/login with the instance username and password returns a bearer token, which must then be pasted here.",
+    access: "direct",
+    permissions: "Read customers, invoices and payments from the InvoiceShelf instance (bearer token).",
+    note: "Connected to the local InvoiceShelf instance; sync returns customers, invoices and payments. Token is stored server-side.",
     verified: "2026-10-23",
   },
   {

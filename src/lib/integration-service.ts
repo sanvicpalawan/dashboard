@@ -331,6 +331,49 @@ async function invoiceShelf(record: IntegrationRecord, mode: "test" | "sync") {
   return { count, detail: `InvoiceShelf adapter received ${invoiceItems.length} invoices, ${customerItems.length} customers and ${paymentItems.length} payments.` };
 }
 
+async function openlivery(record: IntegrationRecord, mode: "test" | "sync") {
+  const creds = credential(record);
+  const separator = creds.indexOf(":");
+  if (separator < 0) throw new Error("Openlivery credential must be stored as email:password.");
+  const email = creds.slice(0, separator).trim();
+  const password = creds.slice(separator + 1);
+  if (!email || !password) throw new Error("Openlivery credential must contain both an email and a password.");
+  const base = record.baseUrl || "http://localhost:8000";
+  const loginResponse = await fetch(endpoint(base, "api/auth/login"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json", "User-Agent": "Palawan-Collective-Command-Center/1.0" },
+    body: JSON.stringify({ email, password }),
+    signal: AbortSignal.timeout(15_000),
+    cache: "no-store",
+    redirect: "error",
+  });
+  if (!loginResponse.ok) {
+    let detail = "";
+    try { const payload = obj(await loginResponse.json()); detail = str(payload.detail || payload.message || payload.error); } catch { /* ignore */ }
+    throw new ProviderHttpError(`Openlivery login failed with HTTP ${loginResponse.status}.${detail ? ` ${detail}` : ""}`, loginResponse.status);
+  }
+  const setCookie = typeof loginResponse.headers.getSetCookie === "function" ? loginResponse.headers.getSetCookie() : [loginResponse.headers.get("set-cookie") || ""];
+  const cookie = (setCookie.find((value) => value.trim().length > 0) || "").split(";")[0].trim();
+  if (!cookie) throw new Error("Openlivery did not return a session cookie.");
+  const headers = { Cookie: cookie };
+  if (mode === "test") {
+    const me = obj(await request(endpoint(base, "api/auth/me"), headers));
+    const agency = obj(me.agency);
+    return { count: 1, detail: `Authenticated Openlivery user ${str(me.name, "verified")} (${str(me.email)}) for agency ${str(agency.name, "unknown")}.` };
+  }
+  const clients = arr(await request(endpoint(base, "api/clients"), headers));
+  const agents = arr(await request(endpoint(base, "api/agents"), headers));
+  const clientItems = clients.map((value) => {
+    const item = obj(value);
+    return linkItem(item.id, item.name, `${str(item.industry, "Industry not reported")} · ${str(item.business_type, "business")} · ${item.is_active === false ? "inactive" : "active"}`, undefined, item.is_active === false ? "inactive" : "active", str(item.timezone));
+  });
+  const agentItems = agents.map((value) => {
+    const item = obj(value);
+    return linkItem(item.id, item.name, `${str(item.provider, "provider not reported")} · ${item.is_active === false ? "inactive" : "active"}`, undefined, item.is_active === false ? "inactive" : "active", item.client_id ? `client ${str(item.client_id).slice(0, 8)}` : undefined);
+  });
+  const count = await cache(record.id, "clients", clientItems) + await cache(record.id, "agents", agentItems);
+  return { count, detail: `Openlivery returned ${clientItems.length} client(s) and ${agentItems.length} agent(s).` };
+}
 async function openCode(record: IntegrationRecord, mode: "test" | "sync") {
   const base = customBase(record);
   const password = credential(record);
@@ -380,7 +423,7 @@ async function upcloud(record: IntegrationRecord, mode: "test" | "sync") {
 type AdapterResult = { count: number; detail: string; identities?: { id: string; login: string }[]; accountErrors?: { id: string; message: string }[] };
 type Adapter = (record: IntegrationRecord, mode: "test" | "sync", accounts: AccountCredential[]) => Promise<AdapterResult>;
 
-const adapters: Record<string, Adapter> = { github, vercel, coolify, cloudflare, invoiceshelf: invoiceShelf, opencode: openCode, openrouter: openRouter, ollama, upcloud };
+const adapters: Record<string, Adapter> = { github, vercel, coolify, cloudflare, invoiceshelf: invoiceShelf, opencode: openCode, openrouter: openRouter, ollama, upcloud, openlivery };
 
 /** Records resolved account identities (never tokens) back into config.accounts. */
 async function persistIdentities(record: IntegrationRecord, result: AdapterResult) {
