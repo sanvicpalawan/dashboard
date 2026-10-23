@@ -10,12 +10,12 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Public URLs are inlined by Next at build time, so they must be present here,
 # not only at runtime. Coolify passes environment variables marked as
 # build-time variables as build args.
-ARG NEXT_PUBLIC_LIBRECHAT_URL
-ARG NEXT_PUBLIC_OPENLIVERY_URL
-ARG NEXT_PUBLIC_INVOICESHELF_URL
-ARG NEXT_PUBLIC_COOLIFY_URL
-ARG NEXT_PUBLIC_CLOUDFLARE_URL
-ARG NEXT_PUBLIC_GIT_URL
+ARG NEXT_PUBLIC_LIBRECHAT_URL="https://chat.merqato.digital"
+ARG NEXT_PUBLIC_OPENLIVERY_URL="https://agents.merqato.digital"
+ARG NEXT_PUBLIC_INVOICESHELF_URL="https://billing.merqato.digital"
+ARG NEXT_PUBLIC_COOLIFY_URL="https://studio.merqato.digital"
+ARG NEXT_PUBLIC_CLOUDFLARE_URL="https://dash.cloudflare.com/account/home"
+ARG NEXT_PUBLIC_GIT_URL="https://git.merqato.digital/"
 ENV NEXT_PUBLIC_LIBRECHAT_URL=$NEXT_PUBLIC_LIBRECHAT_URL \
     NEXT_PUBLIC_OPENLIVERY_URL=$NEXT_PUBLIC_OPENLIVERY_URL \
     NEXT_PUBLIC_INVOICESHELF_URL=$NEXT_PUBLIC_INVOICESHELF_URL \
