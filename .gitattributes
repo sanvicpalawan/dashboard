@@ -1,0 +1,5 @@
+# Shell scripts and Dockerfiles are executed inside Linux containers; they must
+# keep LF endings even on a Windows checkout with core.autocrlf=true.
+*.sh text eol=lf
+Dockerfile text eol=lf
+Dockerfile.* text eol=lf
