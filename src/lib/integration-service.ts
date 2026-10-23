@@ -259,8 +259,27 @@ async function github(record: IntegrationRecord, mode: "test" | "sync", accounts
   };
 }
 
+/**
+ * Vercel CLI stores its login in ~/.local/share/com.vercel.cli/auth.json as
+ * {"<account-id>": "<token>"}. Pasting that whole file instead of the token is an
+ * easy mistake and produces a bare 403 invalidToken from every endpoint, so unwrap
+ * the single-account form here rather than making the operator retry blindly.
+ */
+function vercelToken(record: IntegrationRecord) {
+  const raw = credential(record).trim();
+  if (!raw.startsWith("{")) return raw;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const values = Object.values(parsed).filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+    if (values.length === 1) return values[0].trim();
+  } catch {
+    // Not JSON after all: fall through and use the value exactly as stored.
+  }
+  return raw;
+}
+
 async function vercel(record: IntegrationRecord, mode: "test" | "sync") {
-  const headers = { Authorization: `Bearer ${credential(record)}` };
+  const headers = { Authorization: `Bearer ${vercelToken(record)}` };
   const teamId = str(record.config.teamId);
   const team = teamId ? `${teamId.startsWith("team_") ? "teamId" : "slug"}=${encodeURIComponent(teamId)}&` : "";
   if (mode === "test") {
