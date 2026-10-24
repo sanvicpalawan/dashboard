@@ -108,6 +108,31 @@ button { color: inherit; }
 .launch-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
 .launch-dot-on { background: var(--success); }
 .launch-dot-off { background: color-mix(in srgb, var(--muted) 55%, transparent); }
+
+/* Daily brief: what needs a decision today, first thing on Overview. */
+.brief { padding: 12px 14px; margin-bottom: 12px; }
+.brief-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.brief-counts { display: flex; align-items: center; gap: 5px; }
+.brief-chip { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px; letter-spacing: .02em; }
+.brief-chip-critical { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.brief-chip-warning { color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.brief-chip-info { color: var(--muted); background: color-mix(in srgb, var(--muted) 12%, transparent); }
+.brief-stamp { margin-left: auto; color: var(--muted); font-size: 10px; }
+.brief-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; padding-top: 10px; }
+.brief-group { min-width: 0; }
+.brief-group-title { display: block; color: var(--muted); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 4px; }
+.brief-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.brief-link { display: flex; align-items: flex-start; gap: 8px; padding: 4px 6px; margin-inline: -6px; border-radius: 6px; color: var(--text); }
+.brief-link:hover { background: var(--elevated); }
+.brief-dot { width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; flex: 0 0 auto; }
+.brief-dot-critical { background: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 14%, transparent); }
+.brief-dot-warning { background: var(--warning); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 14%, transparent); }
+.brief-dot-info { background: color-mix(in srgb, var(--muted) 60%, transparent); }
+.brief-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.brief-label { font-size: 12px; font-weight: 560; }
+.brief-detail { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brief-clear { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+.brief-clear svg { color: var(--success); flex: 0 0 auto; }
 .page-heading { display: flex; align-items: flex-start; gap: 20px; margin-bottom: 26px; }
 .page-heading-copy { min-width: 0; }
 .eyebrow { color: var(--accent); font-size: 10px; font-weight: 650; text-transform: uppercase; letter-spacing: .14em; margin-bottom: 7px; }
