@@ -1,0 +1,177 @@
+/*
+ * Public proposal page.
+ *
+ * Deliberately self-contained: this page is reachable by clients who are not signed in, so it
+ * does not depend on the dashboard shell, sidebar or theme context. Colours fall back to the
+ * brand palette if the global variables are not present.
+ */
+
+.proposal-page {
+  --p-bg: var(--bg, #0b0c10);
+  --p-surface: var(--surface, #12141a);
+  --p-border: var(--border, #272b35);
+  --p-accent: var(--accent, #91a0ff);
+  --p-muted: var(--muted, #9197a8);
+  --p-text: var(--text, #f1f2f5);
+  --p-success: var(--success, #68d6b2);
+
+  min-height: 100vh;
+  padding: 48px 20px 64px;
+  background: radial-gradient(1100px 520px at 50% -10%, color-mix(in srgb, var(--p-accent) 12%, transparent), transparent 70%), var(--p-bg);
+  color: var(--p-text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+}
+
+.proposal-page > * { width: 100%; max-width: 860px; }
+
+.proposal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 26px 28px;
+  background: var(--p-surface);
+  border: 1px solid var(--p-border);
+  border-radius: 16px;
+}
+
+.proposal-issuer {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--p-muted);
+}
+
+.proposal-head h1 { margin: 8px 0 6px; font-size: 27px; line-height: 1.2; letter-spacing: -.02em; }
+.proposal-meta { margin: 0; color: var(--p-muted); font-size: 13.5px; }
+
+.proposal-status {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--p-border);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--p-muted);
+  white-space: nowrap;
+}
+.proposal-status-sent { color: var(--p-accent); border-color: color-mix(in srgb, var(--p-accent) 45%, transparent); }
+.proposal-status-accepted { color: var(--p-success); border-color: color-mix(in srgb, var(--p-success) 45%, transparent); }
+.proposal-status-declined { color: var(--danger, #f18484); border-color: color-mix(in srgb, var(--danger, #f18484) 45%, transparent); }
+
+.proposal-body {
+  padding: 8px 4px 0;
+  background: var(--p-surface);
+  border: 1px solid var(--p-border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.proposal-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.proposal-table th, .proposal-table td { padding: 14px 20px; text-align: left; vertical-align: top; }
+.proposal-table thead th {
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--p-muted);
+  border-bottom: 1px solid var(--p-border);
+  font-weight: 600;
+}
+.proposal-table tbody tr + tr td { border-top: 1px solid color-mix(in srgb, var(--p-border) 60%, transparent); }
+.proposal-table td strong { display: block; font-weight: 600; }
+.proposal-table td span { display: block; margin-top: 4px; color: var(--p-muted); font-size: 12.5px; line-height: 1.45; }
+.proposal-table td:nth-child(2), .proposal-table td:nth-child(3), .proposal-table td:nth-child(4),
+.proposal-table thead th:nth-child(2), .proposal-table thead th:nth-child(3), .proposal-table thead th:nth-child(4) { text-align: right; white-space: nowrap; }
+
+.proposal-table tfoot th, .proposal-table tfoot td {
+  border-top: 1px solid var(--p-border);
+  font-size: 15px;
+  font-weight: 700;
+  padding-block: 18px;
+  background: color-mix(in srgb, var(--p-accent) 6%, transparent);
+}
+.proposal-table tfoot th { text-align: right; }
+.proposal-table tfoot td { text-align: right; }
+
+.proposal-terms { margin: 0; padding: 16px 20px 20px; color: var(--p-muted); font-size: 12.5px; line-height: 1.55; }
+
+.proposal-sign, .proposal-accepted, .proposal-declined {
+  padding: 24px 28px;
+  background: var(--p-surface);
+  border: 1px solid var(--p-border);
+  border-radius: 16px;
+}
+.proposal-sign h2, .proposal-accepted h2, .proposal-declined h2 { margin: 0 0 6px; font-size: 17px; }
+.proposal-sign > p, .proposal-accepted p, .proposal-declined p { margin: 0 0 18px; color: var(--p-muted); font-size: 13.5px; line-height: 1.55; }
+
+.proposal-sign form { display: flex; flex-direction: column; gap: 10px; }
+.proposal-sign label { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--p-muted); font-weight: 600; }
+.proposal-sign input[type="text"] {
+  width: 100%;
+  padding: 13px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--p-border);
+  background: var(--p-bg);
+  color: var(--p-text);
+  font-size: 15px;
+}
+.proposal-sign input[type="text"]:focus { outline: 2px solid var(--p-accent); outline-offset: 1px; }
+
+.proposal-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 4px 0 2px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--p-muted);
+  cursor: pointer;
+}
+.proposal-check input { margin-top: 2px; accent-color: var(--p-accent); }
+
+.proposal-sign button {
+  margin-top: 6px;
+  padding: 14px 20px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--p-accent);
+  color: #0b0c10;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter .15s ease;
+}
+.proposal-sign button:hover:not(:disabled) { filter: brightness(1.08); }
+.proposal-sign button:disabled { opacity: .6; cursor: not-allowed; }
+
+.proposal-error { margin: 0; color: var(--danger, #f18484); font-size: 13px; }
+
+.proposal-accepted { border-color: color-mix(in srgb, var(--p-success) 40%, var(--p-border)); }
+.proposal-accepted p { margin-bottom: 0; }
+
+.proposal-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 6px;
+  color: var(--p-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .proposal-page { padding: 24px 14px 44px; }
+  .proposal-head { flex-direction: column; padding: 20px; }
+  .proposal-head h1 { font-size: 22px; }
+  .proposal-table th, .proposal-table td { padding: 12px 14px; }
+  .proposal-table thead th:nth-child(2), .proposal-table tbody td:nth-child(2) { display: none; }
+  .proposal-sign, .proposal-accepted, .proposal-declined { padding: 20px; }
+  .proposal-foot { flex-direction: column; gap: 4px; }
+}

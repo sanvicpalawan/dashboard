@@ -424,6 +424,56 @@ export const invoices = pgTable("invoices", {
   ...timestamps,
 }, (table) => [uniqueIndex("invoice_number_idx").on(table.workspaceId, table.invoiceNumber), index("invoice_status_idx").on(table.status)]);
 
+/**
+ * One priced line on a proposal.
+ *
+ * The catalogue row is snapshotted at the moment the line is added (name, description and
+ * unit price are copied, not referenced) so a later price change in `services` cannot
+ * silently rewrite a proposal a client already received. `serviceId` is kept only to trace
+ * the line back to the catalogue. Amounts are integer minor units (centavos).
+ */
+export type ProposalLineItem = {
+  serviceId: string | null;
+  name: string;
+  description: string;
+  quantity: number;
+  unitPriceMinor: number;
+  totalMinor: number;
+};
+
+/**
+ * Commercial proposal — the link between the priced service catalogue and a signed engagement.
+ *
+ * Created and edited on the internal dashboard, shared with the client through `publicToken`,
+ * and on acceptance creates the project and the draft invoice in one transaction
+ * (`POST /api/proposals/[id]/accept`). `projectId`/`invoiceId` are what make that acceptance
+ * idempotent and traceable: re-opening an accepted link returns the same records instead of
+ * duplicating them.
+ *
+ * status: draft | sent | accepted | declined
+ */
+export const proposals = pgTable("proposals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+  invoiceId: uuid("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  status: text("status").notNull().default("draft"),
+  lineItems: jsonb("line_items").$type<ProposalLineItem[]>().notNull().default([]),
+  totalMinor: integer("total_minor").notNull().default(0),
+  currency: text("currency").notNull().default("PHP"),
+  publicToken: uuid("public_token").notNull().defaultRandom(),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  signatureName: text("signature_name").notNull().default(""),
+  ipAddress: text("ip_address").notNull().default(""),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("proposal_public_token_idx").on(table.publicToken),
+  index("proposal_workspace_created_idx").on(table.workspaceId, table.createdAt),
+  index("proposal_client_idx").on(table.clientId),
+]);
+
 export const subscriptions = pgTable("subscriptions", {
   id: uuid("id").primaryKey().defaultRandom(),
   clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
@@ -663,3 +713,4 @@ export type DashboardRecord = typeof dashboards.$inferSelect;
 export type WidgetInstanceRecord = typeof widgetInstances.$inferSelect;
 export type IntegrationRecord = typeof integrations.$inferSelect;
 export type AgentJobRecord = typeof agentJobs.$inferSelect;
+export type ProposalRecord = typeof proposals.$inferSelect;
