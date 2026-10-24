@@ -28,6 +28,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
 import pg from "pg";
+import { captureBaseline, enforceFileSafety } from "./file-guard.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
@@ -323,6 +324,10 @@ async function runJob(job) {
   let timedOut = false;
   let cancelled = false;
   let violation = null;
+  // Whole-file writes are tracked so the file guard can tell a deliberate
+  // rewrite from a model truncating a module by accident.
+  const writeTargets = new Set();
+  const baseline = captureBaseline(job.directory);
 
   const child = spawn(OPENCODE_BIN, args, {
     cwd: job.directory,
@@ -369,6 +374,10 @@ async function runJob(job) {
         return;
       }
       append(`> tool ${name}${command ? `: ${command.split(/\r?\n/)[0].slice(0, 160)}` : state.status ? ` (${state.status})` : ""}`);
+      if (/^(write|write_file|writefile|create_file)$/i.test(String(name))) {
+        const target = input.path || input.filePath || input.file_path || input.file;
+        if (typeof target === "string" && target) writeTargets.add(target);
+      }
       return;
     }
     if (event.type === "error" || event.error) {
@@ -417,6 +426,18 @@ async function runJob(job) {
 
   const durationSeconds = Math.round((Date.now() - startedAt) / 1000);
 
+  // Catch a destructive edit before the job is reported as a success. The guard
+  // restores anything it flags from the baseline commit, so a truncated module
+  // never reaches a commit, a push, or the next job.
+  let safety = null;
+  if (!violation && !cancelled && baseline) {
+    safety = enforceFileSafety(job.directory, baseline, {
+      writeTargets,
+      instructions: `${job.title}\n${job.instructions}`,
+    });
+    if (safety) append(`> FILE GUARD ${safety.summary}`);
+  }
+
   // A denied command stops the job immediately, whatever the exit code says.
   if (violation) {
     await finish(job, { status: "failed", error: violation, output, exitCode, sessionId, result: lastText.slice(0, MAX_RESULT), durationSeconds });
@@ -428,6 +449,11 @@ async function runJob(job) {
   }
   if (timedOut) {
     await finish(job, { status: retryOrFail(job), error: `Timed out after ${Math.round(TIMEOUT_MS / 60000)} minutes.`, output, exitCode: -1, sessionId, durationSeconds });
+    return;
+  }
+  // Never retry a destructive edit: the same model would make it again.
+  if (safety) {
+    await finish(job, { status: "failed", error: `File guard stopped a destructive edit. ${safety.summary}`, output, exitCode, sessionId, result: lastText.slice(0, MAX_RESULT), durationSeconds });
     return;
   }
   if (exitCode === 0) {
