@@ -83,7 +83,7 @@ function providerLinks(record: IntegrationRow): LaunchLink[] {
     case "invoiceshelf":
       return [{ label: "Invoicing", href: base || "https://billing.merqato.digital", meta: "InvoiceShelf · money of record", state, external: true }];
     case "openlivery":
-      return [{ label: "OpenLivery", href: base || "http://localhost:3000", meta: "AI agent platform", state, external: true }];
+      return [{ label: "OpenLivery", href: process.env.NEXT_PUBLIC_OPENLIVERY_URL || "http://localhost:3000", meta: "AI agent platform", state, external: true }];
     case "ollama":
       return [{ label: "Ollama", href: base || "http://localhost:11434", meta: "local models", state, external: true }];
     case "openrouter":
