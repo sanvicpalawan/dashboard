@@ -92,22 +92,26 @@ button { color: inherit; }
 
 .content { max-width: 1680px; margin: 0 auto; padding: 30px 30px 60px; }
 
-/* Overview launchpad: fast access to every account and system we run on. */
-.launchpad { display: grid; grid-template-columns: repeat(auto-fit, minmax(228px, 1fr)); gap: 10px; margin-bottom: 16px; }
-.launch-group { padding: 10px 12px 8px; min-width: 0; }
-.launch-group-head { display: flex; align-items: center; gap: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-.launch-manage { margin-left: auto; color: var(--muted); font-size: 10px; }
-.launch-manage:hover { color: var(--accent); }
-.launch-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; }
-.launch-row { display: flex; align-items: center; gap: 7px; min-height: 26px; padding: 3px 6px; margin-inline: -6px; border-radius: 6px; font-size: 12px; color: var(--text); }
-.launch-row:hover { background: var(--elevated); }
-.launch-name { font-weight: 520; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.launch-meta { margin-left: auto; color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 58%; }
-.launch-icon { color: var(--muted); flex: 0 0 auto; }
-.launch-row:hover .launch-icon { color: var(--accent); }
-.launch-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
-.launch-dot-on { background: var(--success); }
-.launch-dot-off { background: color-mix(in srgb, var(--muted) 55%, transparent); }
+/* Systems: the directory of accounts at the foot of the overview. */
+.systems { margin-top: 20px; padding: 20px 22px 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.systems-head { display: flex; align-items: baseline; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.systems-head h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.systems-head p { margin: 0; color: var(--muted); font-size: 12px; }
+.systems-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 28px; padding-top: 14px; }
+.systems-group { min-width: 0; }
+.systems-group-head { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.systems-group-head h3 { margin: 0; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.systems-manage { margin-left: auto; color: var(--muted); font-size: 11px; opacity: 0; transition: opacity .12s ease; }
+.systems-group:hover .systems-manage, .systems-manage:focus-visible { opacity: 1; color: var(--accent); }
+.systems-list { list-style: none; margin: 0 0 10px; padding: 0; }
+.systems-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 2px 8px; margin-inline: -8px; border-radius: 6px; font-size: 13px; color: var(--text); transition: background .12s ease; }
+.systems-row:hover { background: var(--elevated); }
+.systems-name { font-weight: 450; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.systems-meta { margin-left: auto; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+.systems-icon { color: var(--muted); flex: 0 0 auto; opacity: .45; }
+.systems-row:hover .systems-icon { opacity: 1; color: var(--accent); }
+.systems-state { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; background: var(--success); opacity: .85; }
+.systems-state.is-off { background: transparent; box-shadow: inset 0 0 0 1px var(--muted); opacity: .6; }
 .page-heading { display: flex; align-items: flex-start; gap: 20px; margin-bottom: 26px; }
 .page-heading-copy { min-width: 0; }
 .eyebrow { color: var(--accent); font-size: 10px; font-weight: 650; text-transform: uppercase; letter-spacing: .14em; margin-bottom: 7px; }
