@@ -51,6 +51,8 @@ export async function POST(request: Request) {
     approvalReason: guard.blocked ? guard.reasons.join(" ") : input.approval === "required" ? "Approval requested when the job was created." : null,
     priority: input.priority ?? 5,
     maxAttempts: input.maxAttempts ?? 2,
+    repeatMinutes: input.repeatMinutes ?? null,
+    scheduleKey: input.repeatMinutes ? `job:${crypto.randomUUID()}` : null,
   }).returning();
 
   await audit(user, "agent.job.created", "agent_job", job.id, { title: job.title, directory: job.directory, approval: job.approval, status: job.status });

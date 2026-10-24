@@ -51,6 +51,7 @@ export const createJobSchema = z.object({
   priority: z.number().int().min(1).max(9).optional(),
   approval: z.enum(["auto", "required"]).optional(),
   maxAttempts: z.number().int().min(1).max(4).optional(),
+  repeatMinutes: z.number().int().min(15).max(10080).nullable().optional(),
 });
 
 export const jobActionSchema = z.object({

@@ -684,6 +684,8 @@ export const agentJobs = pgTable("agent_jobs", {
   startedAt: timestamp("started_at", { withTimezone: true }),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
+  repeatMinutes: integer("repeat_minutes"),
+  scheduleKey: text("schedule_key"),
   ...timestamps,
 }, (table) => [
   index("agent_jobs_queue_idx").on(table.status, table.priority, table.runAt),
