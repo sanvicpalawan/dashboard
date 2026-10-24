@@ -19,7 +19,7 @@ services:
   agent-worker:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.worker
     restart: unless-stopped
     command: ["sh", "/app/scripts/worker-entrypoint.sh"]
     environment:
