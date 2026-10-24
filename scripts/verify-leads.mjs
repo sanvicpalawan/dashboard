@@ -104,10 +104,12 @@ async function assess(prospect) {
   if (mx) evidence.push(mx.hasMx ? `email domain ${mx.domain}: MX ok` : `email domain ${mx.domain}: no MX`);
   if (phoneOk !== null) evidence.push(`phone: ${phoneOk ? "valid PH shape" : "not a PH number shape"}`);
 
+  // Only the business's own site and its booking page carry a reliable identity
+  // title. Facebook and Instagram serve generic or login-walled titles, so they
+  // count as liveness only — never as proof that the record is correct.
   const titleMatches =
     (site?.title && squash(site.title).includes(name)) ||
-    (booking?.title && squash(booking.title).includes(name)) ||
-    (social?.title && squash(social.title).includes(name));
+    (booking?.title && squash(booking.title).includes(name));
 
   const livePage = Boolean((site && site.status >= 200 && site.status < 400) || (booking && booking.status >= 200 && booking.status < 400));
 
