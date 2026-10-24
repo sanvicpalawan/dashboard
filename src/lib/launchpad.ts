@@ -1,1 +1,4 @@
-export function launchpad() {\n\t// Daily brief goes above the launchpad groups.\n\t//\n
+ Agents & delivery
+            // --- New link ---
+            { id: 'github-search', label: 'Search the Web', href: 'https://github.com/davidlapo/search-the-web' },
+            
