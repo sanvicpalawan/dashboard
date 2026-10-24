@@ -10,6 +10,7 @@ import { integrations, websites } from "@/db/schema";
  * only labels, base URLs and connection status.
  */
 
+// Local worker runs Qwen 3B; the 7B model is blocked (config/agent-policy.json).
 export type LaunchState = "connected" | "disconnected";
 
 export type LaunchLink = {
