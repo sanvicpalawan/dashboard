@@ -468,6 +468,32 @@ function retryOrFail(job) {
   return job.attempts < job.max_attempts ? "queued" : "failed";
 }
 
+/** Re-queues the next occurrence of a repeating job. Called only for terminal results. */
+async function scheduleNextRun(job) {
+  if (!job.repeat_minutes || job.repeat_minutes <= 0) return;
+  const { rows } = await client.query(
+    `insert into agent_jobs (
+        workspace_id, created_by, created_by_name, project_id, title, instructions,
+        directory, agent, model, status, approval, max_attempts, repeat_minutes, schedule_key,
+        attempts, run_at
+     )
+     select $1, $2, $3, $4, $5, $6, $7, $8, $9, 'queued', $10, $11, $12, $13,
+            0, now() + ($12 || ' minutes')::interval
+     where $13 is null
+        or not exists (
+          select 1 from agent_jobs
+          where schedule_key = $13 and status in ('queued', 'running')
+        )
+     returning id`,
+    [
+      job.workspace_id, job.created_by, job.created_by_name, job.project_id, job.title, job.instructions,
+      job.directory, job.agent, job.model, job.approval, job.max_attempts, job.repeat_minutes, job.schedule_key,
+    ],
+  );
+  if (rows[0]) log(`[worker] scheduled next run of ${job.title} in ${job.repeat_minutes} minutes (job ${rows[0].id})`);
+  else log(`[worker] skipped next run of ${job.title}: one is already queued or running`);
+}
+
 async function finish(job, { status, error, output, exitCode = null, sessionId = null, result = "", durationSeconds = null }) {
   const retry = status === "queued";
   await client.query(
@@ -485,6 +511,13 @@ async function finish(job, { status, error, output, exitCode = null, sessionId =
     [job.id, status, error, output.slice(-MAX_OUTPUT), exitCode, sessionId, result],
   );
   log(`done ${job.id} -> ${status}${durationSeconds !== null ? ` in ${durationSeconds}s` : ""}${retry ? " (retrying)" : ""}`);
+  if (!retry) {
+    try {
+      await scheduleNextRun(job);
+    } catch (scheduleError) {
+      log(`could not schedule next run of ${job.title}: ${scheduleError.message}`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
