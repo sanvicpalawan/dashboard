@@ -147,6 +147,7 @@ export async function getLaunchGroups(access: LaunchAccess): Promise<LaunchGroup
 
   const ai = forKeys(AI_KEYS);
   ai.push({ label: "Agent jobs", href: "/agent", meta: "queue & runs", external: false });
+  ai.push({ label: "Search the Web", href: "https://github.com/davidlapo/search-the-web", meta: "tooling", external: true });
   if (access.projects) ai.push({ label: "Projects", href: "/projects", meta: "delivery", external: false });
   groups.push(group("ai", "Agents & delivery", ai));
 
