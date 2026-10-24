@@ -27,9 +27,10 @@ export const ACTIVE_AGENT_STATUSES: AgentStatus[] = ["queued", "awaiting_approva
 type PolicyFile = {
   allowedRoots: string[];
   dangerPatterns: { id: string; pattern: string; reason: string }[];
+  blockedModels: { id: string; model: string; reason: string }[];
 };
 
-const FALLBACK: PolicyFile = { allowedRoots: ["C:\\dev"], dangerPatterns: [] };
+const FALLBACK: PolicyFile = { allowedRoots: ["C:\\dev"], dangerPatterns: [], blockedModels: [] };
 
 let cached: PolicyFile | null = null;
 
@@ -41,6 +42,7 @@ export function agentPolicy(): PolicyFile {
     cached = {
       allowedRoots: Array.isArray(parsed.allowedRoots) ? parsed.allowedRoots : FALLBACK.allowedRoots,
       dangerPatterns: Array.isArray(parsed.dangerPatterns) ? parsed.dangerPatterns : [],
+      blockedModels: Array.isArray(parsed.blockedModels) ? parsed.blockedModels : [],
     };
   } catch {
     cached = FALLBACK;
@@ -101,4 +103,16 @@ export function checkInstructions(text: string): { blocked: boolean; reasons: st
     }
   }
   return { blocked: reasons.length > 0, reasons: [...new Set(reasons)] };
+}
+
+/**
+ * Models that must never be dispatched again. Set in config/agent-policy.json so
+ * the dashboard and the worker reject the same list.
+ */
+export function checkModel(model: string | null | undefined): { ok: boolean; error?: string } {
+  const value = (model || "").trim();
+  if (!value) return { ok: true };
+  const blocked = agentPolicy().blockedModels.find((entry) => entry.model.toLowerCase() === value.toLowerCase());
+  if (!blocked) return { ok: true };
+  return { ok: false, error: `${blocked.model} is blocked: ${blocked.reason}` };
 }

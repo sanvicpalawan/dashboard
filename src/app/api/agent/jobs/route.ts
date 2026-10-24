@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { agentJobs } from "@/db/schema";
 import { apiUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { AGENT_STATUSES, allowedRoots, checkDirectory, checkInstructions } from "@/lib/agent-policy";
+import { AGENT_STATUSES, allowedRoots, checkDirectory, checkInstructions, checkModel } from "@/lib/agent-policy";
 import { createJobSchema, publicAgentJob } from "@/lib/agent-jobs";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +32,9 @@ export async function POST(request: Request) {
 
   const directory = checkDirectory(input.directory);
   if (!directory.ok) return Response.json({ error: directory.error }, { status: 400 });
+
+  const model = checkModel(input.model);
+  if (!model.ok) return Response.json({ error: model.error }, { status: 400 });
 
   const guard = checkInstructions(`${input.title}\n${input.instructions}`);
   const approval = input.approval === "required" || guard.blocked ? "required" : "auto";

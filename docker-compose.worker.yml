@@ -1,0 +1,63 @@
+# Agent worker with local Ollama inference.
+#
+# Why this file exists:
+# On 2026-10-24 the qwen2.5-coder:7b model was run inside the worker container on
+# VPS 1 (8 GB RAM, no swap). llama-server took 4.2 GB, the kernel started
+# thrashing, and SSH plus the dashboard became unresponsive. The 7B model is now
+# blocked in config/agent-policy.json and deleted from the host.
+#
+# Rules encoded here:
+#   - one inference job at a time (the worker is a single sequential loop)
+#   - a hard per-job timeout
+#   - a memory ceiling on the worker container so a model cannot take the box down
+#   - an Ollama config that keeps exactly one model loaded and unloads it when idle
+#
+# The dashboard (app + postgres) runs from docker-compose.yml. This file adds the
+# worker only, so the two can be deployed or restarted independently.
+
+services:
+  agent-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["sh", "/app/scripts/worker-entrypoint.sh"]
+    environment:
+      NODE_ENV: production
+      # One job at a time: the worker loop awaits each job before polling again.
+      AGENT_POLL_SECONDS: "5"
+      # Hard ceiling per job. A stuck model is killed at this point.
+      AGENT_TIMEOUT_MINUTES: "20"
+      AGENT_ALLOWED_ROOTS: /workspace
+      AGENT_HEARTBEAT_FILE: /tmp/worker-heartbeat
+      # Local inference only. Hosted provider keys are deliberately not set here.
+      OLLAMA_HOST: "127.0.0.1:11434"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+      # Unload the model shortly after a job so idle RAM goes back to the dashboard.
+      OLLAMA_KEEP_ALIVE: "60s"
+      DATABASE_URL: ${DATABASE_URL:?Set the dashboard database URL}
+      DATABASE_URL_UNPOOLED: ${DATABASE_URL_UNPOOLED:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:?Set the GitHub token used for branch pushes}
+      OPENCODE_AUTH_JSON_B64: ${OPENCODE_AUTH_JSON_B64:-}
+    # Ceiling for the whole container: model + OpenCode + Node.
+    # 4 GB leaves room for the 3B model (~2.5 GB with context) and blocks a 7B
+    # model, which needs about 5 GB once context is allocated.
+    mem_limit: 4g
+    memswap_limit: 4g
+    cpus: 1.5
+    pids_limit: 512
+    volumes:
+      - agent_workspace:/workspace
+      # Models survive container rebuilds; they are downloaded once, not per build.
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "node", "/app/scripts/worker-healthcheck.mjs"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  agent_workspace:
+  ollama_models:

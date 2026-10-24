@@ -40,7 +40,9 @@ if (!DATABASE_URL) {
 }
 
 const POLL_MS = Math.max(2, Number(process.env.AGENT_POLL_SECONDS || 5)) * 1000;
-const TIMEOUT_MS = Math.max(1, Number(process.env.AGENT_TIMEOUT_MINUTES || 45)) * 60_000;
+// Hard ceiling per job. Local CPU inference is slow, but a runaway job must not
+// hold the single worker slot or the box's memory for longer than this.
+const TIMEOUT_MS = Math.max(1, Number(process.env.AGENT_TIMEOUT_MINUTES || 20)) * 60_000;
 const STALE_MINUTES = Math.max(2, Number(process.env.AGENT_STALE_MINUTES || 10));
 const DEFAULT_MODEL = process.env.AGENT_MODEL || null;
 const ONCE = process.argv.includes("--once");
@@ -56,12 +58,13 @@ const HEARTBEAT_FILE = process.env.AGENT_HEARTBEAT_FILE || path.join(os.tmpdir()
 // ---------------------------------------------------------------------------
 
 function loadPolicy() {
-  const fallback = { allowedRoots: ["C:\\dev"], dangerPatterns: [] };
+  const fallback = { allowedRoots: ["C:\\dev"], dangerPatterns: [], blockedModels: [] };
   try {
     const parsed = JSON.parse(readFileSync(path.join(repoRoot, "config", "agent-policy.json"), "utf8"));
     return {
       allowedRoots: Array.isArray(parsed.allowedRoots) ? parsed.allowedRoots : fallback.allowedRoots,
       dangerPatterns: Array.isArray(parsed.dangerPatterns) ? parsed.dangerPatterns : [],
+      blockedModels: Array.isArray(parsed.blockedModels) ? parsed.blockedModels : [],
     };
   } catch (error) {
     console.warn(`[agent-worker] Could not read config/agent-policy.json (${error.message}). Using the built-in allowlist.`);
@@ -81,6 +84,12 @@ function directoryAllowed(directory) {
   if (!inside) return `That directory is outside the agent allowlist (${allowedRoots.join(", ")}).`;
   if (!existsSync(directory)) return "That directory does not exist on this machine.";
   return null;
+}
+
+function blockedModelReason(model) {
+  if (!model) return null;
+  const match = (policy.blockedModels || []).find((entry) => String(entry.model || "").toLowerCase() === String(model).toLowerCase());
+  return match ? `${match.model} is blocked: ${match.reason}` : null;
 }
 
 function guardReasons(text) {
@@ -298,6 +307,11 @@ async function runJob(job) {
 
   const args = ["run", "--format", "json", "--auto"];
   const model = job.model || DEFAULT_MODEL;
+  const blocked = blockedModelReason(model);
+  if (blocked) {
+    await finish(job, { status: "failed", error: blocked, output: "" });
+    return;
+  }
   if (model) args.push("--model", model);
   if (job.agent && !["build", "default"].includes(job.agent)) args.push("--agent", job.agent);
   args.push("--title", job.title.slice(0, 120));

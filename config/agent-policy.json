@@ -1,7 +1,14 @@
 {
   "description": "Guard rails for the local OpenCode agent worker. Read by src/lib/agent-policy.ts (dashboard API) and scripts/agent-worker.mjs (executor) so both enforce the same rules. A job whose instructions match a rule is held for approval; a job that runs a shell command matching a rule is stopped and marked failed.",
-  "version": 20261023,
+  "version": 20261024,
   "allowedRoots": ["C:\\dev", "C:\\Users\\growp\\openlivery", "/app/backend/storage"],
+  "blockedModels": [
+    {
+      "id": "qwen2.5-coder-7b",
+      "model": "ollama/qwen2.5-coder:7b",
+      "reason": "The 7B model needs about 4.2 GB of RAM and exhausted the 8 GB VPS on 2026-10-24, making SSH and the dashboard unresponsive. Local worker jobs use ollama/qwen2.5-coder:3b instead."
+    }
+  ],
   "dangerPatterns": [
     {
       "id": "force-push",
