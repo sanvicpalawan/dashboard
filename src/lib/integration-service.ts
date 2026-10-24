@@ -165,7 +165,7 @@ async function github(record: IntegrationRecord, mode: "test" | "sync", accounts
   const skipped: string[] = [];
   let repositoriesSeen = 0;
   const repositoryNames: string[] = [];
-  const limit = Math.min(10, Math.max(1, num(record.config.maxRepositories) || 5));
+  const limit = Math.min(100, Math.max(1, num(record.config.maxRepositories) || 12));
 
   for (const account of accounts) {
     const headers = headersFor(account.token);
@@ -191,7 +191,7 @@ async function github(record: IntegrationRecord, mode: "test" | "sync", accounts
       // Owners can be user accounts or organisations; /orgs/... only resolves for organisations.
       const accountInfo = obj(await request(endpoint(base, `users/${encodeURIComponent(owner)}`), headers));
       const isOrg = str(accountInfo.type).toLowerCase() === "organization";
-      repoPath = `${isOrg ? "orgs" : "users"}/${encodeURIComponent(owner)}/repos?per_page=50&sort=updated${isOrg ? "" : "&type=owner"}`;
+      repoPath = `${isOrg ? "orgs" : "users"}/${encodeURIComponent(owner)}/repos?per_page=100&sort=updated${isOrg ? "" : "&type=owner"}`;
     } catch (error) {
       failures.push(`${label}: cannot read repositories for ${owner}. ${error instanceof Error ? error.message : ""}`.trim());
       continue;
