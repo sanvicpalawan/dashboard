@@ -437,12 +437,13 @@ async function scheduleNextRun(job) {
         directory, agent, model, status, approval, max_attempts, repeat_minutes, schedule_key,
         attempts, run_at
      )
-     select $1, $2, $3, $4, $5, $6, $7, $8, $9, 'queued', $10, $11, $12::int, $13,
+     select $1::uuid, $2::uuid, $3::text, $4::uuid, $5::text, $6::text, $7::text, $8::text, $9::text,
+            'queued', $10::text, $11::int, $12::int, $13::text,
             0, now() + make_interval(mins => $12::int)
-     where $13 is null
+     where $13::text is null
         or not exists (
           select 1 from agent_jobs
-          where schedule_key = $13 and status in ('queued', 'running')
+          where schedule_key = $13::text and status in ('queued', 'running')
         )
      returning id`,
     [
