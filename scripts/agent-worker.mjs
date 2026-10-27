@@ -45,6 +45,7 @@ const STALE_MINUTES = Math.max(2, Number(process.env.AGENT_STALE_MINUTES || 10))
 const DEFAULT_MODEL = process.env.AGENT_MODEL || null;
 const ONCE = process.argv.includes("--once");
 const MAX_OUTPUT = 80_000;
+const SCRIPT_TIMEOUT_MS = Math.max(5, Number(process.env.AGENT_SCRIPT_TIMEOUT_MINUTES || 30)) * 60_000;
 const MAX_RESULT = 6_000;
 const PID_FILE = path.join(repoRoot, ".agent-worker.pid");
 const WORKER_NAME = `${os.hostname()}#${process.pid}`;
@@ -280,9 +281,88 @@ const JOB_PREAMBLE = [
   "Finish with a short report: what changed, checks run and results, branch and commit, anything unfinished.",
 ].join("\n");
 
+const SCRIPT_ROOT = path.join(repoRoot, "scripts", "nightly");
+
+/** `job.instructions` names one file in scripts/nightly; anything else is rejected. */
+function scriptFile(job) {
+  const name = String(job.instructions || "").trim().split(/\s+/)[0];
+  if (!/^[a-z0-9][a-z0-9-]*\.mjs$/.test(name)) return null;
+  const resolved = path.join(SCRIPT_ROOT, name);
+  return resolved.startsWith(`${SCRIPT_ROOT}${path.sep}`) ? resolved : null;
+}
+
+/**
+ * Runs a deterministic nightly script. These never touch a model: every value they
+ * write comes from a direct check that either answered or did not.
+ */
+async function runScriptJob(job) {
+  const startedAt = Date.now();
+  const file = scriptFile(job);
+  if (!file || !existsSync(file)) {
+    await finish(job, { status: "failed", error: `Unknown nightly script: "${job.instructions}". Expected a file in scripts/nightly.`, output: "" });
+    return;
+  }
+
+  const name = path.basename(file);
+  log(`script ${job.id} ${name}`);
+  let output = "";
+  const append = (line) => {
+    output = `${output}${line}\n`.slice(-MAX_OUTPUT);
+  };
+
+  const child = spawn(process.execPath, [file], {
+    cwd: repoRoot,
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, NO_COLOR: "1" },
+  });
+
+  child.stdout.on("data", (chunk) => append(chunk.toString("utf8").trimEnd()));
+  child.stderr.on("data", (chunk) => {
+    const text = chunk.toString("utf8").trimEnd();
+    if (text) append(`! ${text}`);
+  });
+
+  const flush = setInterval(() => {
+    client.query("update agent_jobs set output = $2, heartbeat_at = now(), updated_at = now() where id = $1", [job.id, output]).catch(() => {});
+  }, 4000);
+
+  const watchdog = setInterval(() => {
+    if (Date.now() - startedAt > SCRIPT_TIMEOUT_MS) {
+      append(`! timed out after ${Math.round(SCRIPT_TIMEOUT_MS / 60000)} minutes`);
+      killTree(child);
+    }
+  }, 5000);
+
+  const exitCode = await new Promise((resolve) => {
+    child.on("error", (error) => { append(`! could not start node: ${error.message}`); resolve(-1); });
+    child.on("close", (code) => resolve(code === null ? -1 : code));
+  });
+
+  clearInterval(flush);
+  clearInterval(watchdog);
+
+  const durationSeconds = Math.round((Date.now() - startedAt) / 1000);
+  const tail = output.trim().split(/\r?\n/).slice(-6).join(" ").slice(0, 900);
+  await finish(job, {
+    status: exitCode === 0 ? "succeeded" : retryOrFail(job),
+    error: exitCode === 0 ? null : tail || `${name} exited with code ${exitCode}.`,
+    output,
+    exitCode,
+    result: tail,
+    durationSeconds,
+  });
+}
+
 async function runJob(job) {
   const startedAt = Date.now();
   log(`start ${job.id} "${job.title}" in ${job.directory}`);
+
+  // Deterministic jobs are plain Node scripts: no model, no prompt, no credits.
+  if (job.agent === "script") {
+    await runScriptJob(job);
+    return;
+  }
 
   // Guard rails are re-checked at execution time; the API cannot be the only gate.
   const directoryProblem = directoryAllowed(job.directory);
@@ -439,7 +519,11 @@ async function scheduleNextRun(job) {
      )
      select $1::uuid, $2::uuid, $3::text, $4::uuid, $5::text, $6::text, $7::text, $8::text, $9::text,
             'queued', $10::text, $11::int, $12::int, $13::text,
-            0, now() + make_interval(mins => $12::int)
+            0, case when $8::text = 'script'
+                    then (date_trunc('day', now() at time zone 'Asia/Manila')
+                          + case when (now() at time zone 'Asia/Manila')::time < time '02:00'
+                                 then interval '2 hours' else interval '26 hours' end) at time zone 'Asia/Manila'
+                    else now() + make_interval(mins => $12::int) end
      where $13::text is null
         or not exists (
           select 1 from agent_jobs
