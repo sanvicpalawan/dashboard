@@ -9,6 +9,7 @@ export type IntegrationDefinition = {
   scopes: string[];
   baseUrl?: string;
   configurableUrl?: boolean;
+  enabled?: boolean;
   secretLabel?: string;
   limitation?: string;
 };

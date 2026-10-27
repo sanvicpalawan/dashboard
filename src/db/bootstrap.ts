@@ -89,6 +89,7 @@ async function bootstrap() {
     capabilities: definition.capabilities,
     scopes: definition.scopes,
     baseUrl: definition.baseUrl || null,
+    enabled: definition.enabled ?? true,
     config: { configurableUrl: Boolean(definition.configurableUrl), secretLabel: definition.secretLabel, limitation: definition.limitation },
   }))).onConflictDoNothing();
 
