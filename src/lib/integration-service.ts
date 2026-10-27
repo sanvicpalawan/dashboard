@@ -419,7 +419,10 @@ async function openRouter(record: IntegrationRecord, mode: "test" | "sync") {
 
 async function ollama(record: IntegrationRecord, mode: "test" | "sync") {
   const base = customBase(record);
-  const headers: Record<string, string> = record.credentialEncrypted ? { Authorization: `Bearer ${credential(record)}` } : {};
+  const token = record.credentialEncrypted ? credential(record) : "";
+  // Cloudflare's edge rule for ollama.merqato.digital requires this header, so the
+  // endpoint answers only to servers holding the stored credential.
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}`, "x-merqato-agent": token } : {};
   const payload = obj(await request(endpoint(base, "api/tags"), headers));
   const models = arr(payload.models);
   if (mode === "test") return { count: models.length, detail: `Ollama responded with ${models.length} available models.` };
