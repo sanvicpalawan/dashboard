@@ -419,7 +419,10 @@ async function openRouter(record: IntegrationRecord, mode: "test" | "sync") {
 
 async function ollama(record: IntegrationRecord, mode: "test" | "sync") {
   const base = customBase(record);
-  const token = record.credentialEncrypted ? credential(record) : "";
+  // The edge rule in front of the tunnel matches one specific credential, so prefer the
+  // default account rather than whichever account happens to be stored first.
+  const accounts = accountCredentials(record);
+  const token = (accounts.find((entry) => entry.id === "default") ?? accounts[0])?.token ?? "";
   // Cloudflare's edge rule for ollama.merqato.digital requires this header, so the
   // endpoint answers only to servers holding the stored credential.
   const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}`, "x-merqato-agent": token } : {};
