@@ -41,7 +41,7 @@ const withPassword = (dsn, value) => {
 async function main() {
   const client = new pg.Client({ connectionString: current });
   await client.connect();
-  const { rows } = await client.query("select format($q$ALTER USER %I WITH PASSWORD %L$q$, current_user, $1) as stmt", [password]);
+  const { rows } = await client.query("select format($q$ALTER USER %I WITH PASSWORD %L$q$, current_user, $1::text) as stmt", [password]);
   await client.query(rows[0].stmt);
   await client.end();
   console.log("password changed");
