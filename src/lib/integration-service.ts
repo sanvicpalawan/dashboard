@@ -33,7 +33,7 @@ class ProviderHttpError extends Error {
 async function request(url: URL, headers: Record<string, string>) {
   let response: Response;
   try {
-    response = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "Palawan-Collective-Command-Center/1.0", ...headers }, signal: AbortSignal.timeout(15_000), cache: "no-store", redirect: "error" });
+    response = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", ...headers }, signal: AbortSignal.timeout(15_000), cache: "no-store", redirect: "error" });
   } catch (error) {
     if (error instanceof Error && error.name === "TimeoutError") throw new Error("Provider request timed out after 15 seconds. Check network access and endpoint availability.");
     throw new Error("Provider could not be reached. Verify the URL, DNS, firewall and server network route.");
