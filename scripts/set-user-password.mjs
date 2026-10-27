@@ -23,8 +23,8 @@ const email = (flag("email") || "").trim().toLowerCase();
 const password = flag("password");
 const sessionHours = Number(flag("session-hours") || 0);
 
-if (!find) {
-  console.error("Usage: set-user-password.mjs --find <current email> [--email <new email>] [--password <new password>] [--session-hours <1-168>]");
+if (!find && !email) {
+  console.error("Usage: set-user-password.mjs [--find <current email>] [--email <new email>] [--password <new password>] [--session-hours <1-168>]");
   process.exit(1);
 }
 
@@ -41,19 +41,40 @@ if (!connectionString) {
 
 const client = new pg.Client({ connectionString });
 
+/**
+ * Finds the account to update without assuming a single spelling. An account already using the
+ * target address wins; otherwise the current address, otherwise the only super administrator.
+ */
+async function resolveAccount() {
+  if (email) {
+    const byTarget = await client.query("select id, email, name, workspace_id from users where lower(email) = $1 limit 1", [email]);
+    if (byTarget.rows[0]) return { account: byTarget.rows[0], rename: false, via: "target address" };
+  }
+  if (find) {
+    const byFind = await client.query("select id, email, name, workspace_id from users where lower(email) = $1 limit 1", [find]);
+    if (byFind.rows[0]) return { account: byFind.rows[0], rename: Boolean(email), via: "current address" };
+  }
+  const superAdmin = await client.query(
+    `select u.id, u.email, u.name, u.workspace_id
+       from users u join roles r on r.id = u.role_id
+      where r.slug = 'super-admin' and u.status = 'active'
+      order by u.last_login_at nulls last, u.created_at
+      limit 1`,
+  );
+  if (superAdmin.rows[0]) return { account: superAdmin.rows[0], rename: Boolean(email), via: "sole super-admin" };
+  return null;
+}
+
 try {
   await client.connect();
 
-  const current = await client.query(
-    "select id, email, name, workspace_id, must_change_password from users where lower(email) = $1 limit 1",
-    [find],
-  );
-  if (!current.rows[0]) throw new Error(`no account found for ${find}`);
-  const account = current.rows[0];
+  const resolved = await resolveAccount();
+  if (!resolved) throw new Error(`no account matched ${find || email}`);
+  const { account, rename, via } = resolved;
 
   const updates = [];
   const values = [];
-  if (email) {
+  if (email && rename) {
     updates.push(`email = $${values.push(email)}`);
   }
   if (password) {
@@ -81,7 +102,7 @@ try {
 
   const after = await client.query("select email, name, must_change_password from users where id = $1", [account.id]);
   const row = after.rows[0];
-  console.log(`account ${account.email} -> ${row.email} (${row.name})`);
+  console.log(`account ${account.email} -> ${row.email} (${row.name}) via ${via}${rename ? ", renamed" : ""}`);
   console.log(`password updated: ${password ? "yes" : "no"}`);
   console.log(`must change password: ${row.must_change_password}`);
 } catch (error) {
