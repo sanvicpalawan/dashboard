@@ -26,6 +26,18 @@ else
   echo "[entrypoint] No OpenCode credentials supplied; only keyless providers will work"
 fi
 
+if [ -n "${OLLAMA_API_KEY:-}" ]; then
+  # The home-machine Ollama endpoint sits behind a Cloudflare edge rule that only
+  # answers requests carrying the stored credential, so the provider config is
+  # rendered at start-up rather than baked into the image.
+  umask 077
+  mkdir -p /root/.config/opencode
+  sed -e "s|__OLLAMA_BASE_URL__|${OLLAMA_BASE_URL:-https://ollama.merqato.digital}|g" \
+      -e "s|__OLLAMA_API_KEY__|${OLLAMA_API_KEY}|g" \
+      /app/config/opencode.worker.json > /root/.config/opencode/opencode.json
+  echo "[entrypoint] Ollama provider configured (${OLLAMA_BASE_URL:-https://ollama.merqato.digital})"
+fi
+
 if [ -n "${GITHUB_TOKEN:-}" ]; then
   umask 077
   printf 'https://x-access-token:%s@github.com\n' "$GITHUB_TOKEN" > /root/.git-credentials
