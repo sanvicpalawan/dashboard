@@ -120,7 +120,8 @@ async function bootstrap() {
   const [role] = await db.select().from(roles).where(eq(roles.slug, "super-admin")).limit(1);
   if (!role) throw new Error("Default role bootstrap failed.");
   const [userCount] = await db.select({ value: count() }).from(users);
-  let admin = (await db.select().from(users).where(eq(users.email, "admin@merqato.local")).limit(1))[0];
+  const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL || "merqatodigital@proton.me";
+  let admin = (await db.select().from(users).where(eq(users.email, adminEmail)).limit(1))[0];
   if (!admin && Number(userCount.value) === 0) {
     // A fixed default password is never used: the demo path signs in without one, and real use
     // requires an explicit BOOTSTRAP_ADMIN_PASSWORD (or a rotated password via the admin script).
@@ -130,7 +131,7 @@ async function bootstrap() {
       workspaceId: workspaceRecord.id,
       roleId: role.id,
       name: "MerQato Administrator",
-      email: process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@merqato.local",
+      email: adminEmail,
       passwordHash: hashPassword(password),
       title: "Agency Operations",
       mustChangePassword: !demo,

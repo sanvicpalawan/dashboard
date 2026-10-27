@@ -84,14 +84,15 @@ deploy, then disable it once migrations are part of your release step.
 
 Sign-in is email + password against the `users` table (scrypt hashes, rate-limited, DB-backed
 sessions, audited). The administrator record is created only when the user table is empty and needs
-`BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD`; otherwise rotate an existing account with:
+`BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD`; otherwise rotate an existing account from
+inside the container (it is the only place with `DATABASE_URL`):
 
 ```sh
-node scripts/set-admin-password.mjs --email admin@merqato.local --out C:\dev\merqato\.secrets\admin-initial-password.txt
+node scripts/set-user-password.mjs --find admin@old.example --email merqatodigital@proton.me --password '<new>' --session-hours 168
 ```
 
-The password is written to `--out` (must be outside the repo), never printed. Move it into a password
-manager and delete the file.
+Run it as a Coolify scheduled task, confirm the execution succeeded, then delete the task so the
+password does not linger in its command history.
 
 `DEMO_MODE` is opt-in: only `DEMO_MODE=true` enables the passwordless "Continue as administrator"
 button and the fictional seed records. Unset, misspelled or `false` means real-use mode, and
