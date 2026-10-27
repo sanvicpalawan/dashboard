@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   Activity, Bell, Blocks, Bot, BriefcaseBusiness, Building2, ChevronDown, ChevronRight, CircleDollarSign,
-  ChevronsLeft, ChevronsRight, Command, FileText, FolderKanban, Globe2, LayoutDashboard,
+  ChevronsLeft, ChevronsRight, Command, Cpu, FileText, FolderKanban, Globe2, LayoutDashboard,
   LogOut, Menu, Palette, Search, Settings2, ShieldCheck, Sparkles, Target, Users, Wrench, X,
 } from "lucide-react";
 import type { SessionUser } from "@/lib/permissions";
@@ -31,6 +31,7 @@ const nav = [
   ] },
   { section: "System", items: [
     { href: "/operations", label: "Operations", icon: Activity, permission: "operations.view" },
+    { href: "/system", label: "Server", icon: Cpu, permission: "operations.view" },
     { href: "/appearance", label: "Appearance", icon: Palette, permission: "appearance.view" },
     { href: "/admin", label: "Administration", icon: ShieldCheck, permission: "admin.access" },
     { href: "/admin/integrations", label: "Integrations", icon: Blocks, permission: "integrations.view" },
