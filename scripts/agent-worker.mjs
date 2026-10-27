@@ -281,13 +281,17 @@ const JOB_PREAMBLE = [
   "Finish with a short report: what changed, checks run and results, branch and commit, anything unfinished.",
 ].join("\n");
 
-const SCRIPT_ROOT = path.join(repoRoot, "scripts", "nightly");
+const SCRIPT_ROOT = path.join(repoRoot, "scripts");
 
-/** `job.instructions` names one file in scripts/nightly; anything else is rejected. */
+/**
+ * `job.instructions` names one script below scripts/, e.g. "scripts/nightly/leads-verify.mjs".
+ * A bare file name is read as a nightly script. Paths that escape scripts/ are rejected.
+ */
 function scriptFile(job) {
-  const name = String(job.instructions || "").trim().split(/\s+/)[0];
-  if (!/^[a-z0-9][a-z0-9-]*\.mjs$/.test(name)) return null;
-  const resolved = path.join(SCRIPT_ROOT, name);
+  const raw = String(job.instructions || "").trim().split(/\s+/)[0];
+  const name = raw.startsWith("scripts/") ? raw : `scripts/nightly/${raw}`;
+  if (!/^scripts\/[a-z0-9][a-z0-9/.-]*\.mjs$/.test(name) || name.includes("..")) return null;
+  const resolved = path.join(repoRoot, name);
   return resolved.startsWith(`${SCRIPT_ROOT}${path.sep}`) ? resolved : null;
 }
 
@@ -299,7 +303,7 @@ async function runScriptJob(job) {
   const startedAt = Date.now();
   const file = scriptFile(job);
   if (!file || !existsSync(file)) {
-    await finish(job, { status: "failed", error: `Unknown nightly script: "${job.instructions}". Expected a file in scripts/nightly.`, output: "" });
+    await finish(job, { status: "failed", error: `Unknown script: "${job.instructions}". Expected a file below scripts/.`, output: "" });
     return;
   }
 
