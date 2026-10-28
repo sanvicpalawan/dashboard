@@ -1,4 +1,0 @@
-Author attribution check
-
-Temporary file used to verify that the plugin's configured commit author is
-applied. It is removed in the following commit.
