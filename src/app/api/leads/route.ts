@@ -1,8 +1,9 @@
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { prospectActivities, prospects, users } from "@/db/schema";
+import { prospectActivities, prospects, users, workspaces } from "@/db/schema";
 import { apiUser } from "@/lib/auth";
+import { validateAgentToken } from "@/lib/agent-auth";
 import { audit } from "@/lib/audit";
 
 import { CHANNELS, OUTCOMES, STAGES, VERIFICATIONS } from "@/lib/leads";
@@ -12,8 +13,42 @@ const nullableDate = z.preprocess((value) => value === "" || value === undefined
 const prospectSchema = z.object({ businessName: z.string().trim().min(2).max(160), contactName: z.string().max(160).default(""), email: z.string().max(200).default(""), phone: z.string().max(80).default(""), whatsapp: z.string().max(80).default(""), website: z.string().max(500).default(""), socialLinks: z.string().max(1000).default(""), industry: z.string().max(120).default(""), location: z.string().max(160).default(""), source: z.string().max(160).default(""), stage: z.enum(STAGES).default("new"), verification: z.enum(VERIFICATIONS).default("unverified"), pitchedServices: z.array(z.string().max(120)).max(20).default([]), estimatedValueMinor: z.number().int().min(0).default(0), notes: z.string().max(10000).default(""), nextFollowUpAt: nullableDate, declinedReason: z.string().max(2000).default(""), ownerId: z.preprocess((value) => value === "" ? null : value, z.string().uuid().nullable().optional()) });
 const activitySchema = z.object({ prospectId: z.string().uuid(), channel: z.enum(CHANNELS), type: z.enum(["outreach", "pitch", "response", "note"]).default("outreach"), pitched: z.array(z.string().max(120)).max(20).default([]), outcome: z.enum(OUTCOMES).default("pending"), response: z.string().max(5000).default(""), note: z.string().max(5000).default(""), occurredAt: z.string().max(40).optional() });
 
-export async function GET() {
-  const { user, response } = await apiUser("leads.view");
+/**
+ * Resolve the acting identity for a leads request.
+ *
+ * A signed-in account with the permission wins. Otherwise the agent bearer
+ * secret (`AGENT_API_KEY`) may act — but an agent is not a user, so it cannot
+ * inherit a role: it is bound to the single workspace this deployment serves,
+ * the same way /api/system resolves it. That keeps every query below scoped to
+ * a real workspace instead of letting the agent read across tenants.
+ *
+ * Returns `{ user }` on success, or `{ response }` with the 401/403 to send.
+ */
+async function resolveActor(request: Request, permission: string) {
+  const { user, response } = await apiUser(permission);
+  if (!response) return { user };
+
+  // Only a genuine authentication failure (401) falls through to the agent
+  // path. A 403 means the account exists but lacks the permission — an
+  // authorisation decision the agent token must not undo. apiUser returns
+  // `user: null` for both, so the status is the only reliable signal.
+  if (response.status === 401 && validateAgentToken(request)) {
+    const [workspace] = await db.select({ id: workspaces.id }).from(workspaces).limit(1);
+    if (!workspace) return { response: Response.json({ error: "No workspace is configured." }, { status: 404 }) } as const;
+    const [agentUser] = await db
+      .select({ id: users.id, workspaceId: users.workspaceId, name: users.name })
+      .from(users)
+      .where(and(eq(users.workspaceId, workspace.id), eq(users.status, "active")))
+      .limit(1);
+    if (!agentUser) return { response: Response.json({ error: "No active account exists to attribute this action to." }, { status: 409 }) } as const;
+    return { user: agentUser, agent: true } as const;
+  }
+
+  return { response } as const;
+}
+
+export async function GET(request: Request) {
+  const { user, response } = await resolveActor(request, "leads.view");
   if (response) return response;
   const rows = await db.select({ prospect: prospects, ownerName: users.name }).from(prospects).leftJoin(users, eq(users.id, prospects.ownerId)).where(eq(prospects.workspaceId, user.workspaceId)).orderBy(desc(prospects.updatedAt));
   const activities = rows.length ? await db.select({ activity: prospectActivities, userName: users.name }).from(prospectActivities).innerJoin(prospects, eq(prospects.id, prospectActivities.prospectId)).leftJoin(users, eq(users.id, prospectActivities.userId)).where(eq(prospects.workspaceId, user.workspaceId)).orderBy(desc(prospectActivities.occurredAt)) : [];
@@ -21,7 +56,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { user, response } = await apiUser("leads.manage");
+  const { user, response } = await resolveActor(request, "leads.manage");
   if (response) return response;
   const body = await request.json();
   if (body?.kind === "activity") {
