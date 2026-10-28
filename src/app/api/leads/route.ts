@@ -1,10 +1,11 @@
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { prospectActivities, prospects, users, workspaces } from "@/db/schema";
+import { prospectActivities, prospects, roles, users, workspaces } from "@/db/schema";
 import { apiUser } from "@/lib/auth";
 import { validateAgentToken } from "@/lib/agent-auth";
 import { audit } from "@/lib/audit";
+import type { SessionUser } from "@/lib/permissions";
 
 import { CHANNELS, OUTCOMES, STAGES, VERIFICATIONS } from "@/lib/leads";
 
@@ -33,15 +34,35 @@ async function resolveActor(request: Request, permission: string) {
   // authorisation decision the agent token must not undo. apiUser returns
   // `user: null` for both, so the status is the only reliable signal.
   if (response.status === 401 && validateAgentToken(request)) {
-    const [workspace] = await db.select({ id: workspaces.id }).from(workspaces).limit(1);
+    const [workspace] = await db
+      .select({ id: workspaces.id, name: workspaces.name, slug: workspaces.slug, demoMode: workspaces.demoMode })
+      .from(workspaces)
+      .limit(1);
     if (!workspace) return { response: Response.json({ error: "No workspace is configured." }, { status: 404 }) } as const;
-    const [agentUser] = await db
-      .select({ id: users.id, workspaceId: users.workspaceId, name: users.name })
+    // Resolve a concrete account so the write has an owner and the audit trail
+    // has a user. It is only an attribution anchor: `permissions` is left empty
+    // so the agent cannot satisfy hasPermission() and gains nothing beyond what
+    // this handler explicitly allows.
+    const [account] = await db
+      .select({
+        id: users.id, workspaceId: users.workspaceId, teamId: users.teamId, roleId: users.roleId,
+        name: users.name, email: users.email, title: users.title,
+        roleSlug: roles.slug, roleName: roles.name,
+      })
       .from(users)
+      .innerJoin(roles, eq(roles.id, users.roleId))
       .where(and(eq(users.workspaceId, workspace.id), eq(users.status, "active")))
       .limit(1);
-    if (!agentUser) return { response: Response.json({ error: "No active account exists to attribute this action to." }, { status: 409 }) } as const;
-    return { user: agentUser, agent: true } as const;
+    if (!account) return { response: Response.json({ error: "No active account exists to attribute this action to." }, { status: 409 }) } as const;
+    const agentUser: SessionUser = {
+      ...account,
+      permissions: [],
+      workspaceName: workspace.name,
+      workspaceSlug: workspace.slug,
+      demoMode: workspace.demoMode,
+      sessionId: "",
+    };
+    return { user: agentUser } as const;
   }
 
   return { response } as const;
