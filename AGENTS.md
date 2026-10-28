@@ -16,9 +16,24 @@ permitted in this workspace.
 
 ## Integration Failure Protocol
 
-If an integration test fails with 401, 403, or a missing credential error, immediately attempt to
-obtain a valid credential from the Vault or the provider's API using the credentials we already
-hold. Do not simply report the error back to the user.
+On 401/403 errors, report the error and stop. Do not attempt to bypass authentication boundaries or
+silently self-escalate.
+
+Finding a missing credential is different from overriding a refusal. If a token is simply absent and
+one already exists in the Vault for the service being called, load it and continue. If a provider
+rejects a credential that is present, or an endpoint is gated by an access policy, treat that as a
+decision and surface it — never route around it by trying other headers, tokens, or accounts.
+
+## Infrastructure Autonomy
+
+Coolify and Cloudflare credentials live in the Vault. Deployments are never automatic: after pushing
+to GitHub, tell the user which commit you pushed and **ask before deploying**. Only run `deploy.ps1`
+once they confirm, and report the deployment ID and result afterwards.
+
+Confirm with the user before any action that changes a live system — deploys, DNS or cache changes,
+environment variables, restarts, rollbacks. Reading state (application list, deployment status, DNS
+records) needs no confirmation. If a deploy fails, report the failure and stop; do not retry blindly
+or widen the change to make it succeed.
 
 ## Infrastructure notes (2026-10-27)
 
