@@ -47,3 +47,17 @@ export function validateAgentToken(request: Request): boolean {
   if (presented === null) return false;
   return secretEquals(presented, expected);
 }
+
+/**
+ * True when the request carries any agent credential: AGENT_API_KEY above, or
+ * the older AGENT_VAULT_SECRET that /api/agent/vault and /api/system have
+ * always trusted. The legacy secret is kept only so existing scripts
+ * (scripts/get-token.sh, cron jobs) keep working; new callers use AGENT_API_KEY.
+ */
+export function validateAgentOrVaultToken(request: Request): boolean {
+  if (validateAgentToken(request)) return true;
+  const expected = process.env.AGENT_VAULT_SECRET;
+  if (typeof expected !== "string" || expected === "") return false;
+  const presented = bearerToken(request);
+  return presented !== null && secretEquals(presented, expected);
+}

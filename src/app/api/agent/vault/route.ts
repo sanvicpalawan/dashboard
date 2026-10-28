@@ -1,14 +1,15 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { integrations } from "@/db/schema";
 import { decryptSecret } from "@/lib/security";
+import { validateAgentOrVaultToken } from "@/lib/agent-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const expectedAuth = `Bearer ${process.env.AGENT_VAULT_SECRET}`;
-  const authHeader = request.headers.get("Authorization");
-  if (!authHeader || authHeader !== expectedAuth) {
+  // Machine credential only — never a browser session. AGENT_API_KEY, or the
+  // legacy AGENT_VAULT_SECRET that scripts/get-token.sh still sends.
+  if (!validateAgentOrVaultToken(request)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
