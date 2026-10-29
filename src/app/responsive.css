@@ -31,7 +31,7 @@ body { overflow-x: hidden; }
 .project-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(260px, .7fr); gap: 16px; align-items: start; }
 /* Long hand-written notes: paragraphs, headings and lists instead of one wall of text. */
 .detail-notes { margin-bottom: 16px; }
-.rich-text { display: grid; gap: 13px; max-width: 74ch; font-size: 13.5px; line-height: 1.72; color: var(--muted); }
+.rich-text { display: grid; gap: 13px; font-size: 14px; line-height: 1.72; color: var(--muted); text-wrap: pretty; }
 .rich-text > :first-child { margin-top: 0; }
 .rich-text p { margin: 0; }
 .rich-text-section { display: grid; gap: 8px; }
