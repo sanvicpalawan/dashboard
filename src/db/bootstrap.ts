@@ -121,8 +121,15 @@ async function bootstrap() {
   if (!role) throw new Error("Default role bootstrap failed.");
   const [userCount] = await db.select({ value: count() }).from(users);
   const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL || "merqatodigital@proton.me";
+  const adminEmailConfigured = Boolean(process.env.BOOTSTRAP_ADMIN_EMAIL);
   let admin = (await db.select().from(users).where(eq(users.email, adminEmail)).limit(1))[0];
-  if (!admin && Number(userCount.value) === 0) {
+  // An empty users table is the normal first run. A named BOOTSTRAP_ADMIN_EMAIL is
+  // honoured as well, otherwise a database that already holds any account — a demo
+  // seed, a previous environment — silently never creates the administrator the
+  // configuration asks for, and the first sign-in fails with "Email or password is
+  // incorrect" against an account that was never inserted. This only ever creates
+  // the missing account; it never modifies or replaces an existing one.
+  if (!admin && (Number(userCount.value) === 0 || adminEmailConfigured)) {
     // A fixed default password is never used: the demo path signs in without one, and real use
     // requires an explicit BOOTSTRAP_ADMIN_PASSWORD (or a rotated password via the admin script).
     const password = process.env.BOOTSTRAP_ADMIN_PASSWORD || randomBytes(24).toString("base64url");
