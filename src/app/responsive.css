@@ -29,6 +29,17 @@ body { overflow-x: hidden; }
 .row-clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .row-selected { background: color-mix(in srgb, var(--accent) 7%, transparent) !important; }
 .project-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(260px, .7fr); gap: 16px; align-items: start; }
+/* Long hand-written notes: paragraphs, headings and lists instead of one wall of text. */
+.detail-notes { margin-bottom: 16px; }
+.rich-text { display: grid; gap: 13px; max-width: 78ch; font-size: 13px; line-height: 1.72; color: var(--muted); }
+.rich-text > :first-child { margin-top: 0; }
+.rich-text p { margin: 0; }
+.rich-text h3 { margin: 4px 0 0; color: var(--text); font-size: 11px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; }
+.rich-text ul, .rich-text ol { margin: 0; padding-left: 19px; display: grid; gap: 7px; }
+.rich-text li { line-height: 1.65; padding-left: 2px; }
+.rich-text li::marker { color: color-mix(in srgb, var(--accent) 70%, var(--muted)); }
+.rich-text a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.rich-text a:hover { text-decoration-thickness: 2px; }
 .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .media-tile { margin: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--elevated); }
 .media-tile img, .media-tile video, .media-tile iframe { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border: 0; background: #000; }
@@ -60,7 +71,7 @@ body { overflow-x: hidden; }
 .lang-bar { display: flex; height: 8px; border-radius: 8px; overflow: hidden; background: var(--elevated); }
 @media (max-width: 1100px) { .project-layout, .leads-layout.has-detail { grid-template-columns: 1fr; } .lead-detail { position: static; max-height: none; } .tools-layout { grid-template-columns: 1fr; } }
 @media (max-width: 620px) { .arch-grid { grid-template-columns: 1fr; } .repo-grid { grid-template-columns: 1fr; } }
-@media (max-width: 620px) { .lead-contact-grid { grid-template-columns: 1fr; } .media-grid { grid-template-columns: 1fr; } .comment { padding: 10px; } }
+@media (max-width: 620px) { .lead-contact-grid { grid-template-columns: 1fr; } .media-grid { grid-template-columns: 1fr; } .comment { padding: 10px; } .rich-text { font-size: 12.5px; line-height: 1.66; gap: 11px; } }
 
 @media (max-width: 1280px) {
   .content { padding-inline: 24px; }
