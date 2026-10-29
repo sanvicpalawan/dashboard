@@ -18,10 +18,18 @@
  *   node scripts/health-monitor.mjs --dry-run  # single check, never notifies
  *
  * ENVIRONMENT (nothing is hard-coded, nothing is read from a checked-in file)
- *   AGENT_API_KEY              required — the dashboard agent bearer token
+ *   AGENT_API_KEY              the dashboard agent bearer token
  *   DASHBOARD_URL              default https://command.merqato.digital
  *   CF_ACCESS_CLIENT_ID        required while Cloudflare Access protects the host
  *   CF_ACCESS_CLIENT_SECRET    required while Cloudflare Access protects the host
+ *
+ *   Each of those three secrets falls back to a file under ~/.secrets when the
+ *   environment variable is absent: agent-api-key, cf-access-client-id and
+ *   cf-access-client-secret. This matters because PowerShell's `$env:NAME = "…"`
+ *   is per process: it disappears with the window that set it, so a scheduled or
+ *   freshly opened terminal starts with nothing and every call comes back as a
+ *   Cloudflare login page. The file keeps working either way.
+ *
  *   OLLAMA_URL                 default http://127.0.0.1:11434
  *   OLLAMA_MODEL               default qwen2.5-coder:3b
  *   INTERVAL_MINUTES           default 15
@@ -41,13 +49,40 @@
 
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
+
+/**
+ * A secret from the environment, or from a restricted file when the environment
+ * does not carry it.
+ *
+ * PowerShell's `$env:NAME = "…"` is scoped to that one process. It is not
+ * persisted, so a scheduled task, a second terminal or a restarted shell sees
+ * nothing at all — which is why a monitor can look correctly configured and
+ * still be handed the Cloudflare login page.
+ */
+function envOrFile(name, fileName) {
+  const fromEnv = process.env[name];
+  if (typeof fromEnv === "string" && fromEnv.trim()) return { value: fromEnv.trim(), source: "environment" };
+  try {
+    const fromFile = readFileSync(join(homedir(), ".secrets", fileName), "utf8").trim();
+    if (fromFile) return { value: fromFile, source: `~/.secrets/${fileName}` };
+  } catch {
+    // Absent is a normal state; the caller reports the consequence.
+  }
+  return { value: "", source: "missing" };
+}
+
+const agentCredential = envOrFile("AGENT_API_KEY", "agent-api-key");
+const cfClientIdCredential = envOrFile("CF_ACCESS_CLIENT_ID", "cf-access-client-id");
+const cfClientSecretCredential = envOrFile("CF_ACCESS_CLIENT_SECRET", "cf-access-client-secret");
 
 const CONFIG = {
   dashboardUrl: (process.env.DASHBOARD_URL || "https://command.merqato.digital").replace(/\/+$/, ""),
-  agentKey: process.env.AGENT_API_KEY || "",
-  cfClientId: process.env.CF_ACCESS_CLIENT_ID || "",
-  cfClientSecret: process.env.CF_ACCESS_CLIENT_SECRET || "",
+  agentKey: agentCredential.value,
+  cfClientId: cfClientIdCredential.value,
+  cfClientSecret: cfClientSecretCredential.value,
+  cfSource: `${cfClientIdCredential.source} / ${cfClientSecretCredential.source}`,
+  agentKeySource: agentCredential.source,
   ollamaUrl: (process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/+$/, ""),
   ollamaModel: process.env.OLLAMA_MODEL || "qwen2.5-coder:3b",
   intervalMinutes: Number(process.env.INTERVAL_MINUTES || 15),
@@ -104,6 +139,34 @@ function dashboardHeaders() {
   return headers;
 }
 
+/**
+ * Turn a failed response into something that names the actual culprit.
+ *
+ * The three failures look similar and get confused constantly:
+ *   302 / HTML login page  — no service-token headers reached Cloudflare
+ *   403 with an "aud" field — a token reached Cloudflare and was refused
+ *   401 from the app       — Access let the call through; the bearer was wrong
+ *                            or the route is not deployed yet
+ */
+function describeFailure(status, text) {
+  if (status === 403 && /"aud"\s*:/.test(text)) {
+    return [
+      "Cloudflare Access refused the service token (403).",
+      "The header names are correct — the VALUES are not: an expired, rotated or",
+      `wrong client-id/secret pair, or a token not attached to this app's policy. Credentials in use: ${CONFIG.cfSource}.`,
+    ].join(" ");
+  }
+  if (status === 401) {
+    return `the app rejected the agent bearer. Credentials in use: ${CONFIG.agentKeySource}. If it is present, the route may not be deployed.`;
+  }
+  if (/^\s*</.test(text)) {
+    return CONFIG.cfClientId
+      ? "Cloudflare Access answered with its login page (HTML), so the service-token headers were sent but not honoured."
+      : "Cloudflare Access answered with its login page (HTML) and no CF_ACCESS_CLIENT_ID was available, so no service-token header was sent.";
+  }
+  return text.slice(0, 300);
+}
+
 async function dashboardJson(path, init = {}) {
   const response = await fetch(`${CONFIG.dashboardUrl}${path}`, {
     ...init,
@@ -111,12 +174,7 @@ async function dashboardJson(path, init = {}) {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const text = await response.text();
-  if (!response.ok) {
-    // A 302 that was followed by the runtime usually surfaces as a 404 from the
-    // Access login page; say so plainly instead of blaming the route.
-    const hint = response.status === 404 && !CONFIG.cfClientId ? " (missing CF-Access headers?)" : "";
-    throw new Error(`${path} -> HTTP ${response.status}${hint}: ${text.slice(0, 200)}`);
-  }
+  if (!response.ok) throw new Error(`${path} -> HTTP ${response.status}: ${describeFailure(response.status, text)}`);
   return JSON.parse(text);
 }
 
@@ -255,7 +313,11 @@ async function runOnce({ dryRun = false } = {}) {
   const problems = [];
   const facts = {};
 
-  if (!CONFIG.agentKey) throw new Error("AGENT_API_KEY is not set — the dashboard will reject every call.");
+  if (!CONFIG.agentKey) {
+    throw new Error(
+      "No agent key: set AGENT_API_KEY, or place it in ~/.secrets/agent-api-key. Without it the dashboard rejects every call.",
+    );
+  }
 
   await checkIntegrations(problems, facts);
   await checkHost(problems, facts);
@@ -321,7 +383,16 @@ async function main() {
     model: CONFIG.ollamaModel,
     threshold: CONFIG.loadThreshold,
     integrations: CONFIG.integrations,
+    agentKeyFrom: CONFIG.agentKeySource,
+    cfCredentialsFrom: CONFIG.cfSource,
   });
+
+  if (!CONFIG.cfClientId || !CONFIG.cfClientSecret) {
+    log("cf.credentials_missing", {
+      consequence: "Cloudflare Access will answer with its login page and every check will fail.",
+      hint: "Set CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET, or place them in ~/.secrets/cf-access-client-id and ~/.secrets/cf-access-client-secret.",
+    });
+  }
 
   // Run immediately, then on a fixed cadence. Each pass is wrapped so a thrown
   // error can never kill the loop and leave the host silently unmonitored.
