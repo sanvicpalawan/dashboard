@@ -31,10 +31,11 @@ body { overflow-x: hidden; }
 .project-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(260px, .7fr); gap: 16px; align-items: start; }
 /* Long hand-written notes: paragraphs, headings and lists instead of one wall of text. */
 .detail-notes { margin-bottom: 16px; }
-.rich-text { display: grid; gap: 13px; max-width: 78ch; font-size: 13px; line-height: 1.72; color: var(--muted); }
+.rich-text { display: grid; gap: 13px; max-width: 74ch; font-size: 13.5px; line-height: 1.72; color: var(--muted); }
 .rich-text > :first-child { margin-top: 0; }
 .rich-text p { margin: 0; }
-.rich-text h3 { margin: 4px 0 0; color: var(--text); font-size: 11px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; }
+.rich-text-section { display: grid; gap: 8px; }
+.rich-text h3 { margin: 2px 0 0; color: var(--text); font-size: 11px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; }
 .rich-text ul, .rich-text ol { margin: 0; padding-left: 19px; display: grid; gap: 7px; }
 .rich-text li { line-height: 1.65; padding-left: 2px; }
 .rich-text li::marker { color: color-mix(in srgb, var(--accent) 70%, var(--muted)); }
