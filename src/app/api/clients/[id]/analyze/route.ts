@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, agentJobs } from "@/db/schema";
 import { apiUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
+import { defaultWorkspaceDir } from "@/lib/agent-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     clientId: client.id,
     title: `Analyze brand: ${client.name}`,
     instructions,
-    directory: "C:\\dev\\harness-smoke",
+    directory: defaultWorkspaceDir(),
     agent: "marketing",
     model: null,
     status: "queued",

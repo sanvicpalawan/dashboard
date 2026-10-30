@@ -52,11 +52,18 @@ const DEFAULT_MAX_OUTPUT = 80_000;
 export const HARNESS_TRANSPORT = String(process.env.HARNESS_TRANSPORT || "headless").trim().toLowerCase();
 export const HARNESS_API_URL = String(process.env.HARNESS_API_URL || "http://127.0.0.1:3080").replace(/\/+$/, "");
 
-/** Resolves the dsh CLI entry point. The .js entry is used directly so Windows never needs cmd.exe quoting. */
+/**
+ * Resolves the dsh CLI entry point. The .js entry is used directly so Windows
+ * never needs cmd.exe quoting. Both host layouts are checked, because the same
+ * worker runs on the workstation and in the Linux container.
+ */
 export function resolveDsh() {
   const candidates = [
     process.env.DSH_BIN,
     path.join(process.env.APPDATA || "", "npm", "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"),
+    "/usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js",
+    "/usr/lib/node_modules/@deepseek-ai/dsh/lib/bin.js",
+    path.join(os.homedir(), ".npm-global", "lib", "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"),
   ].filter(Boolean);
   for (const candidate of candidates) if (existsSync(candidate)) return candidate;
   return null;

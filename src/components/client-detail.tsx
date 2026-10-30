@@ -29,6 +29,15 @@ type Client = {
   brandProfile: BrandProfile | null;
 };
 
+type LatestJob = {
+  id: string;
+  status: string;
+  error: string | null;
+  agent: string;
+  createdAt: string;
+  finishedAt: string | null;
+};
+
 export function ClientDetail({ clientId }: { clientId: string }) {
   const [client, setClient] = useState<Client | null>(null);
   const [error, setError] = useState("");
@@ -36,7 +45,7 @@ export function ClientDetail({ clientId }: { clientId: string }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [polling, setPolling] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
-  const [polling, setPolling] = useState(false);
+  const [latestJob, setLatestJob] = useState<LatestJob | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +57,7 @@ export function ClientDetail({ clientId }: { clientId: string }) {
         if (cancelled) return;
         if (!response.ok) throw new Error(body.error || "Could not load client.");
         setClient(body.client);
+        setLatestJob(body.latestJob ?? null);
       } catch (reason) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : "Load failed.");
       }
@@ -59,25 +69,12 @@ export function ClientDetail({ clientId }: { clientId: string }) {
     try {
       const response = await fetch(`/api/clients/${clientId}`);
       const body = await response.json();
-      if (response.ok) setClient(body.client);
+      if (response.ok) {
+        setClient(body.client);
+        setLatestJob(body.latestJob ?? null);
+      }
     } catch { /* ignore */ }
   }, [clientId]);
-
-  const [latestJobStatus, setLatestJobStatus] = useState<string>("");
-
-  useEffect(() => {
-    if (!client) return;
-    const timer = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/agent/jobs?status=running,status=queued,status=succeeded,status=failed`);
-        if (!res.ok) return;
-        const body = await res.json();
-        const job = body.jobs?.find((j: any) => j.clientId === client.id && j.agent === "marketing");
-        if (job) setLatestJobStatus(job.status);
-      } catch { /* ignore */ }
-    }, 4000);
-    return () => clearInterval(timer);
-  }, [client, clientId]);
 
   async function analyze() {
     setAnalyzing(true); setError(""); setMessage("");
@@ -105,9 +102,11 @@ export function ClientDetail({ clientId }: { clientId: string }) {
         const job = body?.job;
         if (!job) return;
         if (job.status === "succeeded") {
-          setPolling(false); setJobId(null); setMessage("Brand profile updated."); setError(""); await refreshClient();
+          setPolling(false); setJobId(null); setMessage("Brand profile updated."); setError("");
+          await refreshClient();
         } else if (job.status === "failed" || job.status === "cancelled") {
           setPolling(false); setJobId(null); setError(job.error || "Brand analysis failed.");
+          await refreshClient();
         }
       } catch { /* keep polling */ }
     }, 4000);
@@ -139,10 +138,9 @@ export function ClientDetail({ clientId }: { clientId: string }) {
         </div>
       </div>
       {message && <div className="form-success" style={{ marginBottom: 14 }}>{message}</div>}
-      {latestJobStatus === "running" && <div className="form-success" style={{ marginBottom: 14 }}><LoaderCircle size={13} className="animate-spin" /> Brand analysis in progress...</div>}
-      {latestJobStatus === "failed" && <div className="form-error" style={{ marginBottom: 14 }}>Brand analysis failed. <button className="button button-sm" onClick={analyze}>Retry</button></div>}
-      {latestJobStatus === "succeeded" && <div className="form-success" style={{ marginBottom: 14 }}>Brand profile updated.</div>}
-      {error && latestJobStatus !== "running" && <div className="form-error" style={{ marginBottom: 14 }}>{error}</div>}
+      {polling && <div className="form-success" style={{ marginBottom: 14 }}><LoaderCircle size={13} className="animate-spin" /> Brand analysis running…</div>}
+      {!polling && !profile && latestJob?.status === "failed" && <div className="form-error" style={{ marginBottom: 14 }}>The last analysis failed{latestJob.error ? `: ${latestJob.error}` : "."} <button className="button button-sm" onClick={analyze}>Retry</button></div>}
+      {!polling && error && <div className="form-error" style={{ marginBottom: 14 }}>{error}</div>}
 
       <div className="card card-body" style={{ marginBottom: 16 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 }}>

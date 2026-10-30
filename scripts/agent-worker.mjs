@@ -26,7 +26,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -77,17 +77,73 @@ function loadPolicy() {
 }
 
 const policy = loadPolicy();
-const allowedRoots = [...new Set([...policy.allowedRoots, ...String(process.env.AGENT_ALLOWED_ROOTS || "").split(";").map((entry) => entry.trim()).filter(Boolean)])];
 
-const normalise = (value) => path.resolve(value).replace(/[\\/]+$/, "").toLowerCase();
+/**
+ * Where jobs run when they do not name a directory that is usable here.
+ *
+ * Windows and the Linux worker container must agree on the same rule, so this is
+ * configuration, never a hardcoded drive letter. Created on startup below.
+ */
+const WORKSPACE_DIR = (process.env.AGENT_WORKSPACE_DIR || "").trim() || path.join(repoRoot, ".agent-workspace");
+
+const allowedRoots = [...new Set([
+  ...policy.allowedRoots,
+  ...String(process.env.AGENT_ALLOWED_ROOTS || "").split(";").map((entry) => entry.trim()).filter(Boolean),
+  WORKSPACE_DIR,
+])];
+
+/** A Windows drive or UNC path, which is absolute even when read on Linux. */
+const isAbsoluteAnywhere = (value) => {
+  const target = String(value || "").trim();
+  if (!target) return false;
+  return path.isAbsolute(target) || /^[A-Za-z]:[\\/]/.test(target) || /^\\\\[^\\]/.test(target);
+};
+
+/** Normalises for comparison without assuming this host's separator or platform. */
+const normalise = (value) => {
+  const raw = String(value || "").trim();
+  const windowsish = /^[A-Za-z]:[\\/]/.test(raw) || /^\\\\[^\\]/.test(raw);
+  const resolved = windowsish ? raw : path.resolve(raw);
+  return resolved.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+};
+
+/** True when the path belongs to the other OS, so it cannot exist on this host. */
+const isForeignPlatformPath = (value) => {
+  const raw = String(value || "").trim();
+  return process.platform === "win32"
+    ? /^\/(?!\/)/.test(raw)
+    : /^[A-Za-z]:[\\/]/.test(raw) || /^\\\\/.test(raw);
+};
 
 function directoryAllowed(directory) {
-  if (!path.isAbsolute(String(directory || ""))) return "The working directory must be an absolute path.";
+  if (!isAbsoluteAnywhere(directory)) return "The working directory must be an absolute path.";
   const target = normalise(directory);
-  const inside = allowedRoots.map(normalise).some((root) => target === root || target.startsWith(`${root}\\`) || target.startsWith(`${root}/`));
+  const inside = allowedRoots.map(normalise).some((root) => target === root || target.startsWith(`${root}/`));
   if (!inside) return `That directory is outside the agent allowlist (${allowedRoots.join(", ")}).`;
   if (!existsSync(directory)) return "That directory does not exist on this machine.";
   return null;
+}
+
+/**
+ * Turns whatever the dashboard stored into a directory this host can actually use.
+ * A relative path, or one written for the other operating system, falls back to
+ * the worker workspace instead of failing the job with a path error nobody can act on.
+ */
+function resolveJobDirectory(directory) {
+  const raw = String(directory || "").trim();
+  if (!raw) return { directory: WORKSPACE_DIR, reason: "no directory was set" };
+  if (!isAbsoluteAnywhere(raw)) return { directory: WORKSPACE_DIR, reason: `${raw} is not absolute` };
+  if (isForeignPlatformPath(raw)) return { directory: WORKSPACE_DIR, reason: `${raw} belongs to another operating system` };
+  return { directory: raw, reason: null };
+}
+
+/** The workspace must exist before the first job claims it. */
+function ensureWorkspace() {
+  try {
+    mkdirSync(WORKSPACE_DIR, { recursive: true });
+  } catch (error) {
+    log(`could not create workspace ${WORKSPACE_DIR}: ${error.message}`);
+  }
 }
 
 function guardReasons(text) {
@@ -286,6 +342,7 @@ const JOB_PREAMBLE = [
   "You must not: force-push, delete remote branches, delete repositories, drop or truncate databases, delete files outside this task, deploy to production, change DNS, or spend money.",
   "If the task genuinely needs one of those, stop and reply with a line starting BLOCKED and say what approval is needed.",
   "Finish with a short report: what changed, checks run and results, branch and commit, anything unfinished.",
+  "For brand analysis, use browseros-neo to read the client's website. Call the browser directly — do not use terminal commands (pwsh, glob, search, etc.) to find it.",
 ].join("\n");
 
 const SCRIPT_ROOT = path.join(repoRoot, "scripts");
@@ -465,9 +522,21 @@ async function runJob(job) {
   }
 
   // Guard rails are re-checked at execution time; the API cannot be the only gate.
-  const directoryProblem = directoryAllowed(job.directory || "C:\\dev\\harness-smoke");
+  // A directory written for another operating system is mapped to this host's
+  // workspace rather than failing the job on a path nobody can fix from the UI.
+  const resolved = resolveJobDirectory(job.directory);
+  if (resolved.reason) log(`directory fallback for ${job.id}: ${resolved.reason} -> ${resolved.directory}`);
+  job.directory = resolved.directory;
+  const directoryProblem = directoryAllowed(job.directory);
   if (directoryProblem) {
     await finish(job, { status: "failed", error: directoryProblem, output: "" });
+    return;
+  }
+  // The workspace may not exist yet on a fresh container or a new machine.
+  try {
+    mkdirSync(job.directory, { recursive: true });
+  } catch (error) {
+    await finish(job, { status: "failed", error: `Could not create the job directory ${job.directory}: ${error.message}`, output: "" });
     return;
   }
   const reasons = guardReasons(`${job.title}\n${job.instructions}`);
@@ -698,6 +767,7 @@ function acquireLock() {
 
 async function main() {
   acquireLock();
+  ensureWorkspace();
   await connectWithRetry();
   STARTED_AT = new Date().toISOString();
   OPENCODE_VERSION = await readOpencodeVersion();
@@ -705,6 +775,7 @@ async function main() {
   const harness = harnessAvailability();
   log(`harness: ${harness.transport} - ${harness.available ? "ready" : "not available"} (${harness.detail})`);
   log(`allowlist: ${allowedRoots.join(", ")}`);
+  log(`workspace: ${WORKSPACE_DIR}`);
 
   await heartbeat({ queuePaused: false });
 
@@ -734,8 +805,14 @@ async function main() {
   log("worker stopped");
 }
 
-main().catch(async (error) => {
-  console.error("[agent-worker] fatal:", error);
-  await client.end().catch(() => {});
-  process.exit(1);
-});
+// Exported so the path rules can be tested on both operating systems without
+// starting a worker. Running the file directly still starts it.
+export { WORKSPACE_DIR, directoryAllowed, resolveJobDirectory, isAbsoluteAnywhere, normalise };
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(async (error) => {
+    console.error("[agent-worker] fatal:", error);
+    await client.end().catch(() => {});
+    process.exit(1);
+  });
+}

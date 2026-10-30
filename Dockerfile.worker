@@ -1,38 +1,52 @@
-# Harness + worker image for Coolify / Docker Compose
-# Installs dsh (DeepSeek Harness headless engine), NVIDIA route, and runs agent-worker.mjs
+# Agent worker image.
+#
+# Runs scripts/agent-worker.mjs, NOT the Next.js server. Claims agent_jobs from
+# Postgres, runs the job on its engine (Harness for marketing, OpenCode for code,
+# plain Node for scripts), and writes progress back to the database.
+#
+# Two engines are installed because both are selectable per job:
+#   dsh      (@deepseek-ai/dsh)  -- marketing work, headless profile
+#   opencode (@opencode/cli)     -- code work
 FROM node:22-bookworm-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git openssh-client ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*
 
-# Harness engine and OpenCode CLI
-RUN npm install -g @opencode/cli@2.0.30 @deepseek-ai/dsh 2>/dev/null || npm install -g @opencode/cli@2.0.30
-RUN opencode --version
-RUN node -e "console.log('dsh:', require.resolve('@deepseek-ai/dsh/lib/bin.js'))" 2>/dev/null || echo "dsh check skipped"
+# Pinned to the release the workstation runs, so behaviour does not drift.
+RUN npm install -g @opencode/cli@2.0.30 @deepseek-ai/dsh@0.2.1-rc.5 --no-audit --no-fund \
+ && opencode --version \
+ && test -f /usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js
 
 WORKDIR /app
 
-# DB driver, env loader
+# Only the database driver and the env loader are needed; installing them in an
+# empty directory keeps the Next.js stack out of this image.
 RUN npm install --no-audit --no-fund pg@8.20.0 dotenv@17.3.1
 
-# Copy worker scripts, harness adapter, config
 COPY scripts ./scripts
-COPY src/lib ./src/lib
-COPY src/components/agent-jobs.ts ./src/components/agent-jobs.ts 2>/dev/null || true
-COPY src/app/api/agent/jobs ./src/app/api/agent/jobs 2>/dev/null || true
+COPY config ./config
 
-# Set up headless profile with NVIDIA route (the key comes from env at runtime)
-RUN mkdir -p /root/.dsh/profiles/headless && \
-  echo '[{"id":"llm-pi-ai","config":{"providers":{"nvidia":{"displayName":"NVIDIA","apiKeyEnv":"NVIDIA_API_KEY","api":"openai-completions","baseURL":"https://integrate.api.nvidia.com/v1","models":[{"id":"z-ai/glm-5.3-flash","name":"GLM 5.3 Flash (NVIDIA)"}]}}}}]' > /root/.dsh/profiles/headless/cordis.patch.yml || true
+# The headless Harness profile routes model calls through NVIDIA's
+# OpenAI-compatible gateway. No key is stored: apiKeyEnv reads NVIDIA_API_KEY
+# from the environment at run time.
+RUN mkdir -p /root/.dsh/profiles/headless \
+ && cp /app/config/dsh-headless.patch.yml /root/.dsh/profiles/headless/cordis.patch.yml
+
+# Jobs run here unless the dashboard sets AGENT_WORKSPACE_DIR. Created at build
+# time too, so a fresh container never starts with a missing directory.
+RUN mkdir -p /app/.agent-workspace
 
 ENV NODE_ENV=production \
     OPENCODE_BIN=opencode \
+    DSH_BIN=/usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js \
+    AGENT_WORKSPACE_DIR=/app/.agent-workspace \
     AGENT_HEARTBEAT_FILE=/tmp/worker-heartbeat \
     HARNESS_TRANSPORT=headless \
-    NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+    NO_COLOR=1
 
-HEALTHCHECK --interval=60s --timeout=10s --start-period=90s --retries=3 \
-  CMD test -f /tmp/worker-heartbeat && [ $(( $(date +%s) - $(date -r /tmp/worker-heartbeat +%s) )) -lt 180 ] || exit 1
+# No HTTP port: health is the heartbeat file the worker rewrites every poll.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
+  CMD test -f /tmp/worker-heartbeat || exit 1
 
 ENTRYPOINT ["sh", "/app/scripts/worker-entrypoint.sh"]

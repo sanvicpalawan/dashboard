@@ -1,0 +1,30 @@
+# Headless Harness profile for unattended Palawan Collective jobs.
+# Copied to /root/.dsh/profiles/headless/cordis.patch.yml by Dockerfile.worker.
+#
+# Routes the headless engine through NVIDIA's OpenAI-compatible gateway instead
+# of the DeepSeek route, which has no API key in this environment. The key is
+# never stored here: apiKeyEnv resolves NVIDIA_API_KEY from the environment the
+# worker is launched with.
+- id: llm-pi-ai
+  config:
+    providers:
+      nvidia:
+        displayName: NVIDIA
+        apiKeyEnv: NVIDIA_API_KEY
+        api: openai-completions
+        baseURL: https://integrate.api.nvidia.com/v1
+        defaultContextWindow: 131072
+        defaultMaxTokens: 8192
+        models:
+          - id: z-ai/glm-5.3-flash
+            name: GLM 5.3 Flash (NVIDIA)
+            contextWindow: 131072
+          # Verified working as a fallback: cheap, fast, returns real tool calls.
+          - id: openai/gpt-oss-20b
+            name: GPT-OSS 20B (NVIDIA)
+            contextWindow: 131072
+
+- id: agent-default-model
+  config:
+    provider: nvidia
+    model: z-ai/glm-5.3-flash

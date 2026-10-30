@@ -49,4 +49,11 @@ backups/
 # agent worker runtime files
 .agent-worker.log
 .agent-worker.log.1
+.agent-worker.err
 .agent-worker.pid
+
+# per-job workspace created by the worker
+.agent-workspace/
+
+# scratch scripts used during debugging
+.tmp-*.cjs

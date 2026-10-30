@@ -1,4 +1,7 @@
 services:
+  # Development fallback only. In Coolify the dashboard already has its own
+  # Postgres, and DATABASE_URL from the environment overrides the value below,
+  # so this service is not what production uses.
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -22,14 +25,17 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-merqato}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-merqato}
-      DATABASE_URL_UNPOOLED: postgresql://${POSTGRES_USER:-merqato}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-merqato}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-merqato}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-merqato}}
+      DATABASE_URL_UNPOOLED: ${DATABASE_URL_UNPOOLED:-postgresql://${POSTGRES_USER:-merqato}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-merqato}}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:?Set the initial administrator email}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?Set a strong initial administrator password}
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?Set a long random encryption key}
       DEMO_MODE: "false"
       AUTO_MIGRATE: "false"
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      # Must match the worker's value: the app stores the job directory, the
+      # worker executes in it, and the two containers do not share a filesystem.
+      AGENT_WORKSPACE_DIR: /app/.agent-workspace
     ports:
       - "${APP_PORT:-3000}:3000"
     networks: [merqato]
@@ -43,8 +49,8 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-merqato}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-merqato}
-      DATABASE_URL_UNPOOLED: postgresql://${POSTGRES_USER:-merqato}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-merqato}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-merqato}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-merqato}}
+      DATABASE_URL_UNPOOLED: ${DATABASE_URL_UNPOOLED:-postgresql://${POSTGRES_USER:-merqato}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-merqato}}
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:?Set NVIDIA API key}
       AUTO_MIGRATE: "false"
       NODE_ENV: production
@@ -52,14 +58,15 @@ services:
       AGENT_HEARTBEAT_FILE: /tmp/worker-heartbeat
       HARNESS_TRANSPORT: headless
       NO_COLOR: "1"
-      DSH_RUN_ID: worker-docker
+      AGENT_WORKSPACE_DIR: /app/.agent-workspace
+      DSH_BIN: /usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js
     volumes:
-      - /tmp/harness-smoke:/app/harness-smoke
+      - worker_workspace:/app/.agent-workspace
     networks: [merqato]
-    command: sh -c "node scripts/agent-worker.mjs --once && echo 'Worker run complete' || echo 'Worker failed'; exit 0"
 
 volumes:
   merqato_postgres:
+  worker_workspace:
 networks:
   merqato:
     driver: bridge

@@ -60,27 +60,59 @@ export function remoteRoots() {
   return (process.env.AGENT_REMOTE_ROOTS || "").split(";").map((entry) => entry.trim()).filter(Boolean);
 }
 
-export function allowedRoots() {
-  const extra = (process.env.AGENT_ALLOWED_ROOTS || "").split(";").map((entry) => entry.trim()).filter(Boolean);
-  return [...new Set([...agentPolicy().allowedRoots, ...extra, ...remoteRoots()])];
+/**
+ * The directory the app hands to the worker when a job does not name one.
+ *
+ * Jobs execute on the worker host, which may be Windows or a Linux container,
+ * so this is never hardcoded: `AGENT_WORKSPACE_DIR` wins, otherwise a
+ * `.agent-workspace` folder beside the app. The worker creates it on startup.
+ */
+export function defaultWorkspaceDir() {
+  const configured = (process.env.AGENT_WORKSPACE_DIR || "").trim();
+  if (configured) return configured;
+  return path.join(process.cwd(), ".agent-workspace");
 }
 
-/** Normalises a path for prefix comparison (case-insensitive on Windows). */
+export function allowedRoots() {
+  const extra = (process.env.AGENT_ALLOWED_ROOTS || "").split(";").map((entry) => entry.trim()).filter(Boolean);
+  return [...new Set([...agentPolicy().allowedRoots, ...extra, ...remoteRoots(), defaultWorkspaceDir()])];
+}
+
+/** A Windows drive or UNC path, which is absolute even when read on Linux. */
+export function isAbsoluteAnywhere(value: string) {
+  const target = (value || "").trim();
+  if (!target) return false;
+  return path.isAbsolute(target) || /^[A-Za-z]:[\\/]/.test(target) || /^\\\\[^\\]/.test(target);
+}
+
+/**
+ * Normalises a path for prefix comparison, without assuming the current host's
+ * platform: `C:\dev\x` and `C:/dev/x` must compare equal on Linux too.
+ */
 function normalise(value: string) {
-  return path.resolve(value).replace(/[\\/]+$/, "").toLowerCase();
+  const raw = (value || "").trim();
+  const windowsish = /^[A-Za-z]:[\\/]/.test(raw) || /^\\\\[^\\]/.test(raw);
+  const resolved = windowsish ? raw : path.resolve(raw);
+  return resolved.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
 export function checkDirectory(directory: string): { ok: boolean; error?: string } {
   const value = (directory || "").trim();
   if (!value) return { ok: false, error: "A working directory is required." };
-  if (!path.isAbsolute(value)) return { ok: false, error: "The working directory must be an absolute path." };
+  if (!isAbsoluteAnywhere(value)) return { ok: false, error: "The working directory must be an absolute path." };
   const target = normalise(value);
   const roots = allowedRoots().map(normalise);
-  const inside = roots.some((root) => target === root || target.startsWith(`${root}\\`) || target.startsWith(`${root}/`));
+  const inside = roots.some((root) => target === root || target.startsWith(`${root}/`));
   if (!inside) return { ok: false, error: `That directory is outside the agent allowlist (${allowedRoots().join(", ")}). Add it to config/agent-policy.json to permit it.` };
   // A remote root lives on the worker host. The worker verifies it before running.
-  const remote = remoteRoots().map(normalise);
-  if (remote.some((root) => target === root || target.startsWith(`${root}\\`) || target.startsWith(`${root}/`))) return { ok: true };
+  const workerSide = [...remoteRoots(), defaultWorkspaceDir()].map(normalise);
+  if (workerSide.some((root) => target === root || target.startsWith(`${root}/`))) return { ok: true };
+  // A path that cannot exist on this host (a Windows drive on Linux, or the
+  // reverse) is executed by the worker, which checks existence itself.
+  const foreignHost = process.platform === "win32"
+    ? /^\/(?!\/)/.test(value)
+    : /^[A-Za-z]:[\\/]/.test(value) || /^\\\\/.test(value);
+  if (foreignHost) return { ok: true };
   try {
     const stat = statSync(value);
     if (!stat.isDirectory()) return { ok: false, error: "That path is not a directory." };

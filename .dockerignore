@@ -8,3 +8,5 @@ node_modules
 backups
 coverage
 .DS_Store
+.agent-workspace
+.tmp-*.cjs
