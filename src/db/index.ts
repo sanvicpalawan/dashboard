@@ -9,12 +9,12 @@ import { Pool } from "pg";
  * direct DATABASE_URL_UNPOOLED string instead -- see drizzle.config.ts and
  * instrumentation.ts.
  */
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.DATABASE_URL || "postgresql://build:build@localhost:5432/build";
 
-if (!databaseUrl) {
-  throw new Error(
-    "DATABASE_URL is required. Run `neon env pull` (or copy .env.example to .env.local) to load the Neon connection string.",
-  );
+if (!process.env.DATABASE_URL) {
+  // During `next build` (Docker build) DATABASE_URL may not be present. Defer the
+  // hard failure to request time so route modules can still be collected.
+  console.warn("DATABASE_URL is not set; database calls will fail at runtime.");
 }
 
 const globalForDb = globalThis as typeof globalThis & {
