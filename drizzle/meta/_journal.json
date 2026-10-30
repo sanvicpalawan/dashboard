@@ -43,6 +43,13 @@
       "when": 1792801506358,
       "tag": "0005_chief_mystique",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793344325127,
+      "tag": "0006_lush_trauma",
+      "breakpoints": true
     }
   ]
 }

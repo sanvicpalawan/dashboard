@@ -9,7 +9,7 @@ import { hasPermission, type SessionUser } from "@/lib/permissions";
 import { cn, relativeTime } from "@/lib/utils";
 import type { PublicAgentJob } from "@/lib/agent-jobs";
 
-type WorkerState = { online: boolean; reason: string | null; heartbeat: { worker: string; hostname: string; pid: number; startedAt: string; lastSeen: string; runningJobId: string | null; pollSeconds: number; opencodeVersion: string | null; model: string | null } | null };
+type WorkerState = { online: boolean; reason: string | null; heartbeat: { worker: string; hostname: string; pid: number; startedAt: string; lastSeen: string; runningJobId: string | null; pollSeconds: number; opencodeVersion: string | null; model: string | null; harness?: { transport: string; available: boolean; detail: string } | null } | null };
 type StatusPayload = { worker: WorkerState; counts: Record<string, number>; active: number; allowedRoots: string[] };
 
 const STATUS_TONE: Record<string, string> = {
@@ -40,6 +40,7 @@ export function AgentQueue({ user, initialJobs, initialStatus }: { user: Session
   const [title, setTitle] = useState("");
   const [instructions, setInstructions] = useState("");
   const [directory, setDirectory] = useState(initialStatus.allowedRoots[0] || "");
+  const [engine, setEngine] = useState("build");
   const [model, setModel] = useState("");
   const [requiresApproval, setRequiresApproval] = useState(false);
   const [showForm, setShowForm] = useState(initialJobs.length === 0);
@@ -79,7 +80,7 @@ export function AgentQueue({ user, initialJobs, initialStatus }: { user: Session
       const response = await fetch("/api/agent/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, instructions, directory, model: model || null, approval: requiresApproval ? "required" : "auto" }),
+        body: JSON.stringify({ title, instructions, directory, agent: engine, model: engine === "marketing" ? null : model || null, approval: requiresApproval ? "required" : "auto" }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Could not create the job.");
@@ -115,9 +116,9 @@ export function AgentQueue({ user, initialJobs, initialStatus }: { user: Session
   return <>
     <div className="page-heading">
       <div className="page-heading-copy">
-        <div className="eyebrow">Delegate work to OpenCode</div>
+        <div className="eyebrow">Delegate work to OpenCode or the Harness</div>
         <h1>Agent queue</h1>
-        <p className="page-description">Write the task, choose the repository folder and the local worker runs it with OpenCode, then records the log, the result and any blocker here.</p>
+        <p className="page-description">Write the task, choose the repository folder and the engine, and the local worker runs it — then records the log, the result and any blocker here.</p>
       </div>
       <div className="heading-actions">
         <button className="button" onClick={load} disabled={loading}><RefreshCw size={13} />Refresh</button>
@@ -165,12 +166,24 @@ export function AgentQueue({ user, initialJobs, initialStatus }: { user: Session
           <datalist id="agent-roots">{status.allowedRoots.map((root) => <option key={root} value={root} />)}</datalist>
           <small>Must be inside the allowlist: {status.allowedRoots.join(", ")}. The job runs with that folder as its working directory.</small>
         </div>
+        <div className="field field-full"><label>Engine</label>
+          <select value={engine} onChange={(event) => setEngine(event.target.value)}>
+            <option value="build">OpenCode — code, files, git, pull requests</option>
+            <option value="marketing">DeepSeek Harness — marketing, browsing, drafting</option>
+          </select>
+          <small>
+            OpenCode writes code and commits it. The Harness handles marketing work: research, scraping, outreach drafts.
+            {engine === "marketing" && status.worker.heartbeat?.harness && !status.worker.heartbeat.harness.available
+              ? ` Warning: the worker reports the Harness engine as unavailable (${status.worker.heartbeat.harness.detail}).`
+              : ""}
+          </small>
+        </div>
         <div className="field"><label>Model</label>
-          <select value={model} onChange={(event) => setModel(event.target.value)}>
+          <select value={model} onChange={(event) => setModel(event.target.value)} disabled={engine === "marketing"}>
             <option value="">Standard (OpenCode default)</option>
             <option value="ollama/qwen2.5-coder:3b">Quick (local Qwen 3B, free)</option>
           </select>
-          <small>Quick keeps the work on this machine and costs nothing. Use Standard for complex changes.</small>
+          <small>{engine === "marketing" ? "The Harness picks its own model." : "Quick keeps the work on this machine and costs nothing. Use Standard for complex changes."}</small>
         </div>
         <div className="field"><label>Approval</label>
           <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11, marginTop: 8 }}>
@@ -200,7 +213,7 @@ export function AgentQueue({ user, initialJobs, initialStatus }: { user: Session
           <tbody>{jobs.map((job) => <Fragment key={job.id}>
             <tr className={open === job.id ? "is-open" : undefined}>
               <td style={{ width: 26 }}><button className="icon-button" onClick={() => setOpen(open === job.id ? null : job.id)} aria-label="Toggle detail">{open === job.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button></td>
-              <td><strong>{job.title}</strong><div className="agent-sub">{job.createdByName || "Unknown"} - created {relativeTime(job.createdAt)}{job.model ? ` - ${job.model}` : ""}</div></td>
+              <td><strong>{job.title}</strong><div className="agent-sub">{job.createdByName || "Unknown"} - created {relativeTime(job.createdAt)}{job.agent === "marketing" ? " - Harness" : job.agent === "script" ? " - script" : ""}{job.model ? ` - ${job.model}` : ""}</div></td>
               <td><span className={tone(job.status)}>{label(job.status)}</span></td>
               <td className="agent-path">{job.directory}</td>
               <td>{job.attempts}/{job.maxAttempts}</td>

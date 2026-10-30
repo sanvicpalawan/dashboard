@@ -2,11 +2,16 @@
 /**
  * Palawan Collective agent worker.
  *
- * Polls the Command Center database for queued agent jobs, runs them with the
- * local OpenCode CLI inside the job's directory, and records progress, results
- * and blockers back into Postgres.
+ * Polls the Command Center database for queued agent jobs, runs them on the
+ * engine the job names, and records progress, results and blockers back into
+ * Postgres.
  *
  * Design notes
+ * - Two execution engines. `agent` selects one: "script" runs a deterministic
+ *   Node script, "marketing" runs the DeepSeek Harness (scripts/harness-engine.mjs),
+ *   and anything else runs the local OpenCode CLI. Everything before the spawn —
+ *   claim, guard rails, approval, heartbeat, logging, retries, repeat scheduling —
+ *   is shared, so an engine only has to run a prompt and return an outcome.
  * - One job at a time. The queue is claimed with FOR UPDATE SKIP LOCKED, so a
  *   second worker instance can never pick up the same job.
  * - The database is the queue. Nothing is lost if this process restarts: a job
@@ -28,6 +33,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
 import pg from "pg";
+import { harnessAvailability, runHarnessJob } from "./harness-engine.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
@@ -168,6 +174,7 @@ async function heartbeat(state = {}) {
     pollSeconds: Math.round(POLL_MS / 1000),
     opencodeVersion: OPENCODE_VERSION,
     model: DEFAULT_MODEL,
+    harness: harnessAvailability(),
     queuePaused: state.queuePaused === true,
   };
   await client.query(
@@ -358,6 +365,95 @@ async function runScriptJob(job) {
   });
 }
 
+/**
+ * Runs a marketing job on the DeepSeek Harness.
+ *
+ * Everything that makes a job safe — the directory allowlist, the deny rules,
+ * approval, cancellation and the hard timeout — is enforced here and inside
+ * scripts/harness-engine.mjs. This function only owns the queue bookkeeping:
+ * throttled log flushing, the session id, and mapping the engine's outcome
+ * onto a job status.
+ */
+async function runMarketingJob(job) {
+  const availability = harnessAvailability();
+  if (!availability.available) {
+    await finish(job, { status: "failed", error: `The Harness engine is not available: ${availability.detail}`, output: "" });
+    return;
+  }
+  log(`marketing ${job.id} ${availability.transport} ${job.directory}`);
+
+  let output = "";
+  const flush = setInterval(() => {
+    client.query("update agent_jobs set output = $2, heartbeat_at = now(), updated_at = now() where id = $1", [job.id, output]).catch(() => {});
+  }, 4000);
+
+  let outcome;
+  try {
+    outcome = await runHarnessJob(job, {
+      prompt: `${JOB_PREAMBLE}\n\nTask:\n${job.instructions}`,
+      timeoutMs: TIMEOUT_MS,
+      maxOutput: MAX_OUTPUT,
+      // The worker's deny rules take precedence; the engine only reports the command.
+      guardViolation: (command) => guardViolation(command)?.reason || null,
+      isCancelled: () => isCancelled(job.id),
+      onOutput: (value) => { output = value; },
+      onSession: (sessionId) => {
+        client.query("update agent_jobs set session_id = $2 where id = $1", [job.id, sessionId]).catch(() => {});
+      },
+      log,
+    });
+  } finally {
+    clearInterval(flush);
+  }
+
+  output = outcome.output || output;
+  let status = outcome.status === "succeeded" ? "succeeded"
+    : outcome.status === "cancelled" ? "cancelled"
+    : outcome.status === "blocked" ? "failed"
+    : retryOrFail(job);
+
+  // For marketing jobs tied to a client, parse the Harness JSON result and
+  // persist it to clients.brand_profile instead of leaving it as log text.
+  let parsedProfile = null;
+  if (status === "succeeded" && job.clientId) {
+    try {
+      const raw = String(outcome.result || output || "").trim();
+      // Strip accidental markdown fences if present.
+      const cleaned = raw.replace(/^```(?:json)?\\s*/i, "").replace(/```\\s*$/i, "").trim();
+      const jsonMatch = cleaned.match(/\\{[\\s\\S]*\\}/);
+      const candidate = jsonMatch ? jsonMatch[0] : cleaned;
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        parsedProfile = parsed;
+      } else {
+        throw new Error("Harness result was not a JSON object.");
+      }
+    } catch (error) {
+      status = "failed";
+      outcome.error = `Brand analysis did not return valid JSON: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  if (status === "succeeded" && parsedProfile && job.clientId) {
+    try {
+      await client.query("update clients set brand_profile = $1::jsonb, updated_at = now() where id = $2", [JSON.stringify(parsedProfile), job.clientId]);
+    } catch (error) {
+      status = "failed";
+      outcome.error = `Failed to save brand profile: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  await finish(job, {
+    status,
+    error: status === "succeeded" || status === "cancelled" ? null : (outcome.error || null),
+    output,
+    exitCode: outcome.exitCode,
+    sessionId: outcome.sessionId,
+    result: outcome.result,
+    durationSeconds: outcome.durationSeconds,
+  });
+}
+
 async function runJob(job) {
   const startedAt = Date.now();
   log(`start ${job.id} "${job.title}" in ${job.directory}`);
@@ -377,6 +473,13 @@ async function runJob(job) {
   const reasons = guardReasons(`${job.title}\n${job.instructions}`);
   if (reasons.length && job.approval !== "approved") {
     await finish(job, { status: "awaiting_approval", error: reasons.join(" "), output: "" });
+    return;
+  }
+
+  // Marketing work runs on the Harness, not OpenCode. Same guard rails, same
+  // queue, same log — only the engine behind the prompt changes.
+  if (job.agent === "marketing") {
+    await runMarketingJob(job);
     return;
   }
 
@@ -599,6 +702,8 @@ async function main() {
   STARTED_AT = new Date().toISOString();
   OPENCODE_VERSION = await readOpencodeVersion();
   log(`worker ${WORKER_NAME} online. OpenCode ${OPENCODE_VERSION || "unknown"}, poll ${POLL_MS / 1000}s, timeout ${TIMEOUT_MS / 60000}m`);
+  const harness = harnessAvailability();
+  log(`harness: ${harness.transport} - ${harness.available ? "ready" : "not available"} (${harness.detail})`);
   log(`allowlist: ${allowedRoots.join(", ")}`);
 
   await heartbeat({ queuePaused: false });

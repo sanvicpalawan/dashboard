@@ -237,6 +237,15 @@ export const syncRuns = pgTable("sync_runs", {
   finishedAt: timestamp("finished_at", { withTimezone: true }),
 });
 
+export type BrandProfile = {
+  business_name: string;
+  core_offer: string;
+  target_audience: string;
+  brand_voice: string[];
+  content_pillars: string[];
+  landing_page_angle: string;
+};
+
 export const clients = pgTable("clients", {
   id: uuid("id").primaryKey().defaultRandom(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
@@ -252,6 +261,7 @@ export const clients = pgTable("clients", {
   health: text("health").notNull().default("good"),
   notes: text("notes").notNull().default(""),
   links: jsonb("links").$type<{ label: string; url: string }[]>().notNull().default([]),
+  brandProfile: jsonb("brand_profile").$type<BrandProfile | null>().default(null),
   ...timestamps,
 }, (table) => [index("clients_workspace_idx").on(table.workspaceId)]);
 
@@ -663,6 +673,7 @@ export const agentJobs = pgTable("agent_jobs", {
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   createdByName: text("created_by_name").notNull().default(""),
   projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+  clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   instructions: text("instructions").notNull(),
   directory: text("directory").notNull(),

@@ -74,6 +74,8 @@ export type WorkerHeartbeat = {
   pollSeconds: number;
   opencodeVersion: string | null;
   model: string | null;
+  /** Reported by the worker for the second engine. Absent on heartbeats written before it existed. */
+  harness?: { transport: string; available: boolean; detail: string } | null;
   queuePaused: boolean;
 };
 
