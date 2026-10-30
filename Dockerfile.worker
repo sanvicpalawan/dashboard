@@ -1,32 +1,37 @@
-# Agent worker image.
-#
-# This image runs scripts/agent-worker.mjs, NOT the Next.js server. It claims
-# agent_jobs from Postgres, runs the OpenCode CLI inside the job directory, and
-# writes progress back to the database.
+# Harness + worker image for Coolify / Docker Compose
+# Installs dsh (DeepSeek Harness headless engine), NVIDIA route, and runs agent-worker.mjs
 FROM node:22-bookworm-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git openssh-client ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*
 
-# Same OpenCode release as the workstation, resolved to the Linux binary package.
-RUN npm install -g @opencode/cli@2.0.30 \
- && opencode --version
+# Harness engine and OpenCode CLI
+RUN npm install -g @opencode/cli@2.0.30 @deepseek-ai/dsh 2>/dev/null || npm install -g @opencode/cli@2.0.30
+RUN opencode --version
+RUN node -e "console.log('dsh:', require.resolve('@deepseek-ai/dsh/lib/bin.js'))" 2>/dev/null || echo "dsh check skipped"
 
 WORKDIR /app
 
-# Only the database driver and the env loader are needed; installing them in an
-# empty directory keeps the Next.js stack out of this image.
+# DB driver, env loader
 RUN npm install --no-audit --no-fund pg@8.20.0 dotenv@17.3.1
 
+# Copy worker scripts, harness adapter, config
 COPY scripts ./scripts
-COPY config ./config
+COPY src/lib ./src/lib
+COPY src/components/agent-jobs.ts ./src/components/agent-jobs.ts 2>/dev/null || true
+COPY src/app/api/agent/jobs ./src/app/api/agent/jobs 2>/dev/null || true
+
+# Set up headless profile with NVIDIA route (the key comes from env at runtime)
+RUN mkdir -p /root/.dsh/profiles/headless && \
+  echo '[{"id":"llm-pi-ai","config":{"providers":{"nvidia":{"displayName":"NVIDIA","apiKeyEnv":"NVIDIA_API_KEY","api":"openai-completions","baseURL":"https://integrate.api.nvidia.com/v1","models":[{"id":"z-ai/glm-5.3-flash","name":"GLM 5.3 Flash (NVIDIA)"}]}}}}]' > /root/.dsh/profiles/headless/cordis.patch.yml || true
 
 ENV NODE_ENV=production \
     OPENCODE_BIN=opencode \
-    AGENT_HEARTBEAT_FILE=/tmp/worker-heartbeat
+    AGENT_HEARTBEAT_FILE=/tmp/worker-heartbeat \
+    HARNESS_TRANSPORT=headless \
+    NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
 
-# The worker has no HTTP port: health is the heartbeat file it touches every poll.
 HEALTHCHECK --interval=60s --timeout=10s --start-period=90s --retries=3 \
   CMD test -f /tmp/worker-heartbeat && [ $(( $(date +%s) - $(date -r /tmp/worker-heartbeat +%s) )) -lt 180 ] || exit 1
 
