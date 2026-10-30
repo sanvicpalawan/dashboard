@@ -41,7 +41,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     clientId: client.id,
     title: `Analyze brand: ${client.name}`,
     instructions,
-    directory: "C:/dev",
+    directory: "C:\\dev\\harness-smoke",
     agent: "marketing",
     model: null,
     status: "queued",

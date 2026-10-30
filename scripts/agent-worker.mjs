@@ -465,7 +465,7 @@ async function runJob(job) {
   }
 
   // Guard rails are re-checked at execution time; the API cannot be the only gate.
-  const directoryProblem = directoryAllowed(job.directory);
+  const directoryProblem = directoryAllowed(job.directory || "C:\\dev\\harness-smoke");
   if (directoryProblem) {
     await finish(job, { status: "failed", error: directoryProblem, output: "" });
     return;
